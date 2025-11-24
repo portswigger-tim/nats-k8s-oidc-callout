@@ -38,8 +38,37 @@ var (
 	ErrMissingK8sClaims = errors.New("missing kubernetes claims")
 )
 
-// NewValidator creates a new JWT validator that loads JWKS from a file.
-func NewValidator(jwksPath, issuer, audience string) (*Validator, error) {
+// NewValidatorFromURL creates a new JWT validator that fetches JWKS from an HTTP URL.
+// This is the production constructor that fetches JWKS with automatic refresh.
+// The keyfunc library handles caching and periodic refresh automatically.
+func NewValidatorFromURL(jwksURL, issuer, audience string) (*Validator, error) {
+	// Fetch JWKS from URL with automatic refresh
+	// keyfunc.Get() handles:
+	// - HTTP fetching
+	// - Automatic refresh (default 1 hour)
+	// - Caching
+	// - Error handling and retries
+	jwks, err := keyfunc.Get(jwksURL, keyfunc.Options{
+		RefreshInterval:   time.Hour,        // Refresh keys every hour
+		RefreshRateLimit:  time.Minute * 5,  // Rate limit refreshes to once per 5 minutes
+		RefreshTimeout:    time.Second * 10, // Timeout for refresh requests
+		RefreshUnknownKID: true,             // Refresh if we encounter an unknown key ID
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch JWKS from URL: %w", err)
+	}
+
+	return &Validator{
+		jwks:     jwks,
+		issuer:   issuer,
+		audience: audience,
+		timeFunc: time.Now, // Default to real time
+	}, nil
+}
+
+// NewValidatorFromFile creates a new JWT validator that loads JWKS from a file.
+// This is primarily for testing purposes. In production, use NewValidatorFromURL.
+func NewValidatorFromFile(jwksPath, issuer, audience string) (*Validator, error) {
 	// Read JWKS file
 	jwksData, err := os.ReadFile(jwksPath)
 	if err != nil {

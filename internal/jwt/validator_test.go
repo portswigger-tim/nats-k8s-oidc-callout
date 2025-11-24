@@ -7,11 +7,11 @@ import (
 	"time"
 )
 
-func TestNewValidator_LoadsJWKS(t *testing.T) {
-	// RED: This test will fail because Validator doesn't exist yet
+func TestNewValidatorFromFile_LoadsJWKS(t *testing.T) {
+	// Test loading JWKS from file (for testing)
 	jwksPath := filepath.Join("..", "..", "testdata", "jwks.json")
 
-	validator, err := NewValidator(jwksPath, "https://test-issuer.com", "test-audience")
+	validator, err := NewValidatorFromFile(jwksPath, "https://test-issuer.com", "test-audience")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -21,9 +21,16 @@ func TestNewValidator_LoadsJWKS(t *testing.T) {
 	}
 }
 
-func TestNewValidator_FailsWithInvalidJWKS(t *testing.T) {
-	// RED: Test for error handling with invalid JWKS file
-	validator, err := NewValidator("/nonexistent/path/jwks.json", "https://test-issuer.com", "test-audience")
+func TestNewValidatorFromURL_FetchesJWKS(t *testing.T) {
+	// RED: Test loading JWKS from HTTP URL (for production)
+	// This test would require a mock HTTP server or will be skipped for now
+	// In production, this will fetch from https://kubernetes.default.svc/openid/v1/jwks
+	t.Skip("Requires mock HTTP server - will implement when needed")
+}
+
+func TestNewValidatorFromFile_FailsWithInvalidPath(t *testing.T) {
+	// Test for error handling with invalid JWKS file
+	validator, err := NewValidatorFromFile("/nonexistent/path/jwks.json", "https://test-issuer.com", "test-audience")
 
 	if err == nil {
 		t.Fatal("expected error for invalid JWKS path, got nil")
@@ -48,7 +55,7 @@ func TestValidateToken_ValidToken(t *testing.T) {
 
 	// Note: The real token has a different issuer and audience
 	// We'll need to use the actual values from the token
-	validator, err := NewValidator(
+	validator, err := NewValidatorFromFile(
 		jwksPath,
 		"https://oidc.eks.eu-west-1.amazonaws.com/id/B88E7287E54DB073AC9CDC2FD1BE0969",
 		"sts.amazonaws.com",
@@ -87,7 +94,7 @@ func TestValidateToken_ExpiredToken(t *testing.T) {
 	}
 	tokenString := string(tokenBytes)
 
-	validator, err := NewValidator(
+	validator, err := NewValidatorFromFile(
 		jwksPath,
 		"https://oidc.eks.eu-west-1.amazonaws.com/id/B88E7287E54DB073AC9CDC2FD1BE0969",
 		"sts.amazonaws.com",
@@ -114,10 +121,10 @@ func TestValidateToken_ExpiredToken(t *testing.T) {
 }
 
 func TestValidateToken_InvalidSignature(t *testing.T) {
-	// RED: Test for invalid signature detection
+	// Test for invalid signature detection
 	jwksPath := filepath.Join("..", "..", "testdata", "jwks.json")
 
-	validator, err := NewValidator(jwksPath, "https://test-issuer.com", "test-audience")
+	validator, err := NewValidatorFromFile(jwksPath, "https://test-issuer.com", "test-audience")
 	if err != nil {
 		t.Fatalf("failed to create validator: %v", err)
 	}
@@ -136,7 +143,7 @@ func TestValidateToken_InvalidSignature(t *testing.T) {
 }
 
 func TestValidateToken_WrongIssuer(t *testing.T) {
-	// RED: Test for issuer validation
+	// Test for issuer validation
 	jwksPath := filepath.Join("..", "..", "testdata", "jwks.json")
 	tokenPath := filepath.Join("..", "..", "testdata", "token.jwt")
 
@@ -146,7 +153,7 @@ func TestValidateToken_WrongIssuer(t *testing.T) {
 	}
 
 	// Create validator with wrong issuer
-	validator, err := NewValidator(jwksPath, "https://wrong-issuer.com", "sts.amazonaws.com")
+	validator, err := NewValidatorFromFile(jwksPath, "https://wrong-issuer.com", "sts.amazonaws.com")
 	if err != nil {
 		t.Fatalf("failed to create validator: %v", err)
 	}

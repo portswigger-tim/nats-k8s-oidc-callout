@@ -74,18 +74,30 @@ testdata/                   - ✅ Real test data (JWKS, token, ServiceAccount)
 The JWT validator (`internal/jwt/`) provides comprehensive token validation:
 
 ### Features Implemented
-- **JWKS from file**: Loads and parses JWKS for signature verification
+- **JWKS from HTTP URL**: Fetches JWKS from Kubernetes OIDC endpoint with automatic refresh
+  - Production: `NewValidatorFromURL()` - HTTP fetch with caching
+  - Testing: `NewValidatorFromFile()` - Load from file
+- **Automatic key refresh**: Keys refreshed every hour with 5-minute rate limiting
+- **Key rotation support**: Automatically refetches when unknown key ID encountered
 - **Signature validation**: RS256 algorithm with key rotation support
 - **Standard claims**: Validates issuer, audience, expiration, not-before, issued-at
 - **K8s claims**: Extracts `kubernetes.io/serviceaccount/namespace` and `name`
 - **Time mocking**: Injectable time function for testing expiration logic
 - **Error types**: `ErrExpiredToken`, `ErrInvalidSignature`, `ErrInvalidClaims`, `ErrMissingK8sClaims`
 
+### JWKS Caching Strategy
+- **Refresh interval**: 1 hour (configurable)
+- **Rate limiting**: Max one refresh per 5 minutes
+- **Timeout**: 10 seconds per refresh request
+- **Unknown KID handling**: Automatic refresh on unknown key ID
+- **Library**: Uses `github.com/MicahParks/keyfunc/v2` for automatic management
+
 ### Testing Approach
 - TDD (red-green-refactor) methodology
 - Real test data from EKS cluster (testdata/)
 - Time-based testing without external mocking libraries
 - 6 test cases covering success and failure scenarios
+- File-based JWKS loading for tests (no HTTP dependency)
 
 ## Open Implementation Questions
 
