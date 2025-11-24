@@ -3,6 +3,8 @@ module github.com/portswigger-tim/nats-k8s-oidc-callout
 go 1.25.4
 
 require (
+	github.com/MicahParks/keyfunc/v2 v2.1.0
+	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/prometheus/client_golang v1.23.2
 	go.uber.org/zap v1.27.1
 )
