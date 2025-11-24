@@ -8,6 +8,9 @@
 *.so
 *.dylib
 
+# Application binary
+nats-k8s-auth
+
 # Test binary, built with `go test -c`
 *.test
 
