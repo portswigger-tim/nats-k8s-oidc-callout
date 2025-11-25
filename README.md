@@ -61,14 +61,29 @@ metadata:
 
 This grants:
 - **Publish**: `foo.>`, `bar.>`, `platform.commands.*`
-- **Subscribe**: `foo.>`, `platform.events.*`, `shared.status`
+- **Subscribe**: `_INBOX.>`, `_INBOX_foo_my-service.>`, `foo.>`, `platform.events.*`, `shared.status`
 - **Request-Reply**: Enabled via `allow_responses: true` (MaxMsgs: 1, no time limit)
 
-**Security Note:** The service uses NATS `allow_responses: true` permission instead of granting wildcard `_INBOX.>` access. This is more secure because:
-- Clients can only publish to reply subjects during active request handling
-- No ability to eavesdrop on other clients' reply traffic
-- Response publishing expires immediately after sending (MaxMsgs: 1)
-- Follows NATS security best practices for request-reply patterns
+**Request-Reply Security:**
+
+The service provides **two inbox patterns** for request-reply, balancing convenience and security:
+
+1. **Standard Inbox (`_INBOX.>`)** - Default convenience
+   - Works with standard NATS clients (no configuration needed)
+   - Suitable when ServiceAccounts represent trusted workload boundaries
+
+2. **Private Inbox (`_INBOX_namespace_serviceaccount.>`)** - Enhanced security
+   - Opt-in isolation preventing eavesdropping between workloads
+   - Clients configure custom inbox prefix: `nats.CustomInboxPrefix("_INBOX_foo_my-service.")`
+   - Provides defense-in-depth for multi-tenant scenarios
+
+**Response Publishing Security:**
+- Uses `allow_responses: true` instead of `_INBOX.>` publish permissions
+- Clients can only publish replies during active request handling
+- Response permission expires after one message (MaxMsgs: 1)
+- Follows NATS security best practices
+
+See [Client Usage Guide](docs/CLIENT_USAGE.md) for private inbox implementation examples.
 
 ## Development Status
 

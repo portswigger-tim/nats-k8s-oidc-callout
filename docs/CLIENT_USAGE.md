@@ -77,16 +77,61 @@ metadata:
 **Resulting Permissions:**
 
 - **Publish**: `my-namespace.>`, `platform.events.>`, `shared.commands.*`
-- **Subscribe**: `my-namespace.>`, `platform.notifications.*`, `shared.status`
+- **Subscribe**: `_INBOX.>`, `_INBOX_my-namespace_my-service-account.>`, `my-namespace.>`, `platform.notifications.*`, `shared.status`
 - **Request-Reply**: Enabled via `allow_responses: true` (MaxMsgs: 1, no time limit)
 
-**Security Note:** The service uses NATS `allow_responses: true` permission instead of granting wildcard `_INBOX.>` access. This provides the most secure approach for request-reply patterns:
-- **Granular Control**: Clients can only publish to reply subjects during active request handling
-- **No Eavesdropping**: No ability to subscribe to or publish to other clients' reply traffic
-- **Automatic Expiration**: Response publishing permission expires immediately after sending (MaxMsgs: 1)
-- **NATS Best Practice**: Follows official NATS security recommendations for request-reply patterns
+### Request-Reply Security
 
-This means your application can use `nc.Request()` and handle reply messages normally, but cannot abuse `_INBOX.>` wildcards to access other clients' replies.
+The auth service provides **layered security** for request-reply patterns:
+
+#### 1. Standard Inbox Pattern (Default)
+
+**Permission**: `_INBOX.>` subscribe access
+
+**Use Case**: Default convenience - works with standard NATS clients without configuration
+
+```go
+// Standard usage - no special configuration needed
+nc, err := nats.Connect(natsURL, nats.Token(token))
+response, err := nc.Request("service.endpoint", []byte("data"), 2*time.Second)
+```
+
+**Security**: Suitable when ServiceAccounts represent trusted workload boundaries. Other workloads with the same permissions could theoretically subscribe to `_INBOX.>` to observe replies.
+
+#### 2. Private Inbox Pattern (Enhanced Security)
+
+**Permission**: `_INBOX_namespace_serviceaccount.>` subscribe access
+
+**Use Case**: Multi-tenant isolation - prevents eavesdropping between workloads
+
+```go
+// Enhanced security with custom inbox prefix
+nc, err := nats.Connect(
+    natsURL,
+    nats.Token(token),
+    nats.CustomInboxPrefix("_INBOX_my-namespace_my-service-account."), // Matches permission
+)
+response, err := nc.Request("service.endpoint", []byte("data"), 2*time.Second)
+```
+
+**Security**: Complete isolation - only this ServiceAccount can receive replies on its private inbox. Other workloads cannot eavesdrop even if they have `_INBOX.>` access.
+
+#### Response Publishing Security
+
+Both patterns use `allow_responses: true` instead of `_INBOX.>` publish permissions:
+- **Granular Control**: Responders can only publish replies during active request handling
+- **Automatic Expiration**: Response permission expires after one message (MaxMsgs: 1)
+- **No Abuse**: Cannot publish to arbitrary inbox subjects
+- **NATS Best Practice**: Follows official NATS security recommendations
+
+### Choosing the Right Pattern
+
+| Pattern | Convenience | Security | Use When |
+|---------|-------------|----------|----------|
+| **Standard Inbox** | ✅ High (no config) | ⚠️ Moderate | ServiceAccounts = trust boundaries |
+| **Private Inbox** | ⚠️ Requires config | ✅ High (full isolation) | Multi-tenant or high-security scenarios |
+
+**Recommendation**: Start with standard inbox for simplicity. Upgrade to private inbox when you need defense-in-depth security.
 
 ## Client Implementation
 
@@ -278,6 +323,102 @@ public class NatsClient {
 ```gradle
 implementation 'io.nats:jnats:2.17.0'
 ```
+
+### Private Inbox Examples
+
+For enhanced security, clients can configure custom inbox prefixes to prevent eavesdropping.
+
+#### Go with Private Inbox
+
+```go
+package main
+
+import (
+    "fmt"
+    "log"
+    "os"
+    "github.com/nats-io/nats.go"
+)
+
+func main() {
+    natsURL := os.Getenv("NATS_URL")
+    tokenFile := os.Getenv("NATS_TOKEN_FILE")
+    namespace := os.Getenv("K8S_NAMESPACE")        // e.g., "my-namespace"
+    serviceAccount := os.Getenv("K8S_SA_NAME")     // e.g., "my-service-account"
+
+    token, _ := os.ReadFile(tokenFile)
+
+    // Configure private inbox prefix matching the permission
+    inboxPrefix := fmt.Sprintf("_INBOX_%s_%s.", namespace, serviceAccount)
+
+    nc, err := nats.Connect(
+        natsURL,
+        nats.Token(string(token)),
+        nats.CustomInboxPrefix(inboxPrefix),  // Enable private inbox
+    )
+    if err != nil {
+        log.Fatalf("Failed to connect: %v", err)
+    }
+    defer nc.Close()
+
+    log.Printf("Connected with private inbox prefix: %s", inboxPrefix)
+
+    // Request-reply now uses private inbox - no eavesdropping possible
+    response, err := nc.Request("service.endpoint", []byte("data"), 2*time.Second)
+    if err != nil {
+        log.Fatalf("Request failed: %v", err)
+    }
+
+    log.Printf("Received reply: %s", string(response.Data))
+}
+```
+
+#### Java with Private Inbox
+
+```java
+package com.example.natsclient;
+
+import io.nats.client.Connection;
+import io.nats.client.Nats;
+import io.nats.client.Options;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+
+public class SecureNatsClient {
+    public static void main(String[] args) {
+        try {
+            String natsUrl = System.getenv("NATS_URL");
+            String tokenFile = System.getenv("NATS_TOKEN_FILE");
+            String namespace = System.getenv("K8S_NAMESPACE");
+            String serviceAccount = System.getenv("K8S_SA_NAME");
+
+            String token = new String(Files.readAllBytes(Paths.get(tokenFile))).trim();
+
+            // Configure private inbox prefix matching the permission
+            String inboxPrefix = String.format("_INBOX_%s_%s.", namespace, serviceAccount);
+
+            Options options = new Options.Builder()
+                .server(natsUrl)
+                .token(token.toCharArray())
+                .inboxPrefix(inboxPrefix)  // Enable private inbox
+                .build();
+
+            Connection nc = Nats.connect(options);
+            System.out.println("Connected with private inbox prefix: " + inboxPrefix);
+
+            // Request-reply now uses private inbox - no eavesdropping possible
+            byte[] response = nc.request("service.endpoint", "data".getBytes()).getData();
+            System.out.println("Received reply: " + new String(response));
+
+            nc.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
+```
+
+**Security Benefit**: With private inbox prefix configured, only this ServiceAccount can receive replies. Other workloads cannot eavesdrop even if they have `_INBOX.>` permissions.
 
 ## Token Rotation Handling
 
