@@ -46,8 +46,20 @@ func (c *Cache) Get(namespace, name string) ([]string, []string, bool) {
 	key := makeKey(namespace, name)
 	perms, found := c.cache[key]
 	if !found {
+		c.logger.Debug("ServiceAccount NOT found in cache",
+			zap.String("namespace", namespace),
+			zap.String("name", name),
+			zap.String("key", key),
+			zap.Int("cache_size", len(c.cache)))
 		return nil, nil, false
 	}
+
+	c.logger.Debug("ServiceAccount found in cache",
+		zap.String("namespace", namespace),
+		zap.String("name", name),
+		zap.String("key", key),
+		zap.Int("pub_perms_count", len(perms.Publish)),
+		zap.Int("sub_perms_count", len(perms.Subscribe)))
 
 	return perms.Publish, perms.Subscribe, true
 }
@@ -60,6 +72,14 @@ func (c *Cache) upsert(sa *corev1.ServiceAccount) {
 	key := makeKey(sa.Namespace, sa.Name)
 	perms := buildPermissions(sa, c.logger)
 	c.cache[key] = perms
+
+	c.logger.Debug("ServiceAccount added to cache",
+		zap.String("namespace", sa.Namespace),
+		zap.String("name", sa.Name),
+		zap.String("key", key),
+		zap.Int("pub_perms_count", len(perms.Publish)),
+		zap.Int("sub_perms_count", len(perms.Subscribe)),
+		zap.Int("cache_size", len(c.cache)))
 }
 
 // delete removes a ServiceAccount from the cache

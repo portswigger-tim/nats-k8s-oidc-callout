@@ -18,7 +18,8 @@ type Config struct {
 	NatsAccount   string
 
 	// Kubernetes JWT Validation
-	JWKSUrl      string
+	JWKSUrl      string // JWKS URL (mutually exclusive with JWKSPath)
+	JWKSPath     string // JWKS file path (mutually exclusive with JWKSUrl)
 	JWTIssuer    string
 	JWTAudience  string
 
@@ -53,6 +54,7 @@ func Load() (*Config, error) {
 	cfg.NatsURL = getEnv("NATS_URL", "nats://nats:4222")
 
 	// Kubernetes JWT validation with conditional defaults for in-cluster deployments
+	cfg.JWKSPath = os.Getenv("JWKS_PATH")
 	if cfg.K8sInCluster {
 		cfg.JWKSUrl = getEnv("JWKS_URL", "https://kubernetes.default.svc/openid/v1/jwks")
 		cfg.JWTIssuer = getEnv("JWT_ISSUER", "https://kubernetes.default.svc")
@@ -71,8 +73,12 @@ func Load() (*Config, error) {
 	if cfg.NatsAccount = os.Getenv("NATS_ACCOUNT"); cfg.NatsAccount == "" {
 		missing = append(missing, "NATS_ACCOUNT")
 	}
-	if cfg.JWKSUrl == "" {
-		missing = append(missing, "JWKS_URL")
+	// Either JWKS_URL or JWKS_PATH is required (but not both)
+	if cfg.JWKSUrl == "" && cfg.JWKSPath == "" {
+		missing = append(missing, "JWKS_URL or JWKS_PATH")
+	}
+	if cfg.JWKSUrl != "" && cfg.JWKSPath != "" {
+		return nil, fmt.Errorf("JWKS_URL and JWKS_PATH are mutually exclusive; provide only one")
 	}
 	if cfg.JWTIssuer == "" {
 		missing = append(missing, "JWT_ISSUER")

@@ -11,6 +11,7 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/portswigger-tim/nats-k8s-oidc-callout/internal/auth"
 	"github.com/portswigger-tim/nats-k8s-oidc-callout/internal/config"
@@ -51,17 +52,40 @@ func run() error {
 	)
 
 	// Initialize JWT validator
-	logger.Info("initializing JWT validator", zap.String("jwks_url", cfg.JWKSUrl))
-	jwtValidator, err := jwt.NewValidatorFromURL(cfg.JWKSUrl, cfg.JWTIssuer, cfg.JWTAudience)
-	if err != nil {
-		return fmt.Errorf("failed to create JWT validator: %w", err)
+	var jwtValidator *jwt.Validator
+	if cfg.JWKSPath != "" {
+		logger.Info("initializing JWT validator from file", zap.String("jwks_path", cfg.JWKSPath))
+		jwtValidator, err = jwt.NewValidatorFromFile(cfg.JWKSPath, cfg.JWTIssuer, cfg.JWTAudience)
+		if err != nil {
+			return fmt.Errorf("failed to create JWT validator from file: %w", err)
+		}
+	} else {
+		logger.Info("initializing JWT validator from URL", zap.String("jwks_url", cfg.JWKSUrl))
+		jwtValidator, err = jwt.NewValidatorFromURL(cfg.JWKSUrl, cfg.JWTIssuer, cfg.JWTAudience)
+		if err != nil {
+			return fmt.Errorf("failed to create JWT validator from URL: %w", err)
+		}
 	}
 
 	// Initialize Kubernetes client
 	logger.Info("initializing Kubernetes client")
-	k8sConfig, err := rest.InClusterConfig()
-	if err != nil {
-		return fmt.Errorf("failed to get in-cluster config: %w", err)
+	var k8sConfig *rest.Config
+	if cfg.K8sInCluster {
+		logger.Info("using in-cluster Kubernetes config")
+		k8sConfig, err = rest.InClusterConfig()
+		if err != nil {
+			return fmt.Errorf("failed to get in-cluster config: %w", err)
+		}
+	} else {
+		logger.Info("using out-of-cluster Kubernetes config from KUBECONFIG")
+		// Use KUBECONFIG environment variable or default kubeconfig location
+		loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+		configOverrides := &clientcmd.ConfigOverrides{}
+		kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
+		k8sConfig, err = kubeConfig.ClientConfig()
+		if err != nil {
+			return fmt.Errorf("failed to load kubeconfig: %w", err)
+		}
 	}
 
 	clientset, err := kubernetes.NewForConfig(k8sConfig)
@@ -96,6 +120,15 @@ func run() error {
 		return fmt.Errorf("failed to create NATS client: %w", err)
 	}
 
+	// Load signing key from credentials file
+	// The credentials file contains the account seed used to sign authorization responses
+	logger.Info("loading signing key from credentials", zap.String("creds_file", cfg.NatsCredsFile))
+	signingKey, err := nats.LoadSigningKeyFromCredsFile(cfg.NatsCredsFile)
+	if err != nil {
+		return fmt.Errorf("failed to load signing key from credentials: %w", err)
+	}
+	natsClient.SetSigningKey(signingKey)
+
 	// Start NATS auth callout service
 	ctx := context.Background()
 	if err := natsClient.Start(ctx); err != nil {
@@ -105,21 +138,8 @@ func run() error {
 
 	logger.Info("NATS auth callout service started successfully")
 
-	// Initialize HTTP server with health checks
-	httpSrv := httpserver.New(cfg.Port, logger, httpserver.HealthChecks{
-		NatsConnected: func() bool {
-			// TODO: Add proper health check
-			return true
-		},
-		K8sConnected: func() bool {
-			// TODO: Add proper health check
-			return true
-		},
-		CacheInitialized: func() bool {
-			// TODO: Add proper health check
-			return true
-		},
-	})
+	// Initialize HTTP server
+	httpSrv := httpserver.New(cfg.Port, logger)
 
 	// Start HTTP server in a goroutine
 	serverErrors := make(chan error, 1)

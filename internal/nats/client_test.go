@@ -243,6 +243,13 @@ func TestClient_AuthorizerFunction(t *testing.T) {
 				t.Fatalf("Failed to create client: %v", err)
 			}
 
+			// Set up signing key for JWT encoding
+			signingKey, err := nkeys.CreateAccount()
+			if err != nil {
+				t.Fatalf("Failed to create signing key: %v", err)
+			}
+			client.SetSigningKey(signingKey)
+
 			// Create authorization request
 			userKey, _ := nkeys.CreateUser()
 			userPubKey, _ := userKey.PublicKey()
@@ -355,10 +362,6 @@ func TestClient_NewClient(t *testing.T) {
 			if client != nil {
 				if client.url != tt.url {
 					t.Errorf("Client URL = %q, want %q", client.url, tt.url)
-				}
-
-				if client.signingKey == nil {
-					t.Error("Expected signing key to be initialized")
 				}
 			}
 		})

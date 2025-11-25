@@ -15,24 +15,15 @@ import (
 type Server struct {
 	httpServer *http.Server
 	logger     *zap.Logger
-	healthChecks HealthChecks
-}
-
-// HealthChecks holds functions to check various component health.
-type HealthChecks struct {
-	NatsConnected  func() bool
-	K8sConnected   func() bool
-	CacheInitialized func() bool
 }
 
 // HealthResponse represents the JSON response from the health endpoint.
 type HealthResponse struct {
-	Status string            `json:"status"`
-	Checks map[string]bool   `json:"checks"`
+	Healthy bool `json:"healthy"`
 }
 
 // New creates a new HTTP server with health and metrics endpoints.
-func New(port int, logger *zap.Logger, checks HealthChecks) *Server {
+func New(port int, logger *zap.Logger) *Server {
 	mux := http.NewServeMux()
 
 	s := &Server{
@@ -43,8 +34,7 @@ func New(port int, logger *zap.Logger, checks HealthChecks) *Server {
 			WriteTimeout: 10 * time.Second,
 			IdleTimeout:  120 * time.Second,
 		},
-		logger:       logger,
-		healthChecks: checks,
+		logger: logger,
 	}
 
 	// Register endpoints
@@ -72,49 +62,13 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.httpServer.Shutdown(ctx)
 }
 
-// handleHealth returns the health status of the service.
+// handleHealth returns a simple liveness check.
+// Returns 200 OK with {"healthy": true} if the HTTP server is responding.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	checks := map[string]bool{
-		"nats_connected":    true, // Default to true for now
-		"k8s_connected":     true,
-		"cache_initialized": true,
-	}
-
-	// Call health check functions if they exist
-	if s.healthChecks.NatsConnected != nil {
-		checks["nats_connected"] = s.healthChecks.NatsConnected()
-	}
-	if s.healthChecks.K8sConnected != nil {
-		checks["k8s_connected"] = s.healthChecks.K8sConnected()
-	}
-	if s.healthChecks.CacheInitialized != nil {
-		checks["cache_initialized"] = s.healthChecks.CacheInitialized()
-	}
-
-	// Determine overall status
-	healthy := true
-	for _, v := range checks {
-		if !v {
-			healthy = false
-			break
-		}
-	}
-
-	status := "healthy"
-	statusCode := http.StatusOK
-	if !healthy {
-		status = "unhealthy"
-		statusCode = http.StatusServiceUnavailable
-	}
-
-	response := HealthResponse{
-		Status: status,
-		Checks: checks,
-	}
-
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
+	w.WriteHeader(http.StatusOK)
 
+	response := HealthResponse{Healthy: true}
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		s.logger.Error("failed to encode health response", zap.Error(err))
 	}

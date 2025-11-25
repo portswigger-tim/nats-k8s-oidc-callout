@@ -31,7 +31,7 @@ test-e2e:
 	@echo "Running E2E tests..."
 	@echo "Note: Requires Docker to be running"
 	@docker info > /dev/null 2>&1 || (echo "Error: Docker is not running" && exit 1)
-	go test -tags=e2e -v -timeout=10m ./e2e_test.go
+	go test -tags=e2e -v -timeout=10m ./e2e_suite_test.go
 
 # Run all tests (unit + integration + e2e)
 test-all: test-unit test-integration test-e2e

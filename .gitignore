@@ -12,6 +12,7 @@
 nats-k8s-auth
 nats-k8s-oidc-callout
 nats-k8s-oidc-callout-*
+/server
 
 # Build output directory
 out/

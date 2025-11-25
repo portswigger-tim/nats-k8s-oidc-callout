@@ -1,8 +1,11 @@
 package nats
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/nats-io/jwt/v2"
@@ -35,17 +38,11 @@ type Client struct {
 }
 
 // NewClient creates a new NATS auth callout client
+// The signing key will be loaded from the credentials file during Start()
 func NewClient(url string, authHandler AuthHandler, logger *zap.Logger) (*Client, error) {
-	// Generate signing key for responses
-	signingKey, err := nkeys.CreateAccount()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create signing key: %w", err)
-	}
-
 	return &Client{
 		url:         url,
 		authHandler: authHandler,
-		signingKey:  signingKey,
 		logger:      logger,
 	}, nil
 }
@@ -57,6 +54,11 @@ func (c *Client) SetSigningKey(key nkeys.KeyPair) {
 
 // Start connects to NATS and starts the auth callout service
 func (c *Client) Start(ctx context.Context) error {
+	// Verify signing key is set
+	if c.signingKey == nil {
+		return fmt.Errorf("signing key not set; call SetSigningKey() before Start()")
+	}
+
 	// Connect to NATS with timeout
 	conn, err := natsclient.Connect(c.url,
 		natsclient.Timeout(5*time.Second),
@@ -86,6 +88,8 @@ func (c *Client) Start(ctx context.Context) error {
 		authReq := &auth.AuthRequest{
 			Token: token,
 		}
+
+		c.logger.Debug("calling auth handler with token")
 		authResp := c.authHandler.Authorize(authReq)
 
 		c.logger.Debug("auth handler response",
@@ -103,8 +107,8 @@ func (c *Client) Start(ctx context.Context) error {
 		// Build NATS user claims
 		uc := jwt.NewUserClaims(req.UserNkey)
 
-		// Set the account this user belongs to
-		// Use "$G" for the global account (NATS special value)
+		// Set the audience to the global account
+		// $G is the NATS global account - simplest approach for single-tenant setups
 		uc.Audience = "$G"
 
 		uc.Pub.Allow.Add(authResp.PublishPermissions...)
@@ -169,6 +173,71 @@ func (c *Client) Shutdown(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// loadSigningKeyFromConnection attempts to load the signing key from the NATS URL
+// If the URL contains credentials or a credentials file is specified, extract the seed
+func (c *Client) loadSigningKeyFromConnection() error {
+	// Try to parse credentials from URL
+	// Format: nats://seed@host:port or nats://user:seed@host:port
+	// For now, we rely on the NATS client to handle credentials
+	// The signing key will be set externally via SetSigningKey() if needed
+	return fmt.Errorf("signing key must be set externally")
+}
+
+// LoadSigningKeyFromCredsFile parses a NATS credentials file and extracts the account seed
+// Credentials file format:
+//   -----BEGIN NATS USER JWT-----
+//   <jwt>
+//   ------END NATS USER JWT------
+//
+//   -----BEGIN USER NKEY SEED-----
+//   <seed>
+//   ------END USER NKEY SEED------
+func LoadSigningKeyFromCredsFile(path string) (nkeys.KeyPair, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open credentials file: %w", err)
+	}
+	defer file.Close()
+
+	var seed string
+	inSeedSection := false
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		if strings.Contains(line, "BEGIN USER NKEY SEED") || strings.Contains(line, "BEGIN NKEY SEED") {
+			inSeedSection = true
+			continue
+		}
+
+		if strings.Contains(line, "END USER NKEY SEED") || strings.Contains(line, "END NKEY SEED") {
+			inSeedSection = false
+			break
+		}
+
+		if inSeedSection && line != "" {
+			seed = line
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read credentials file: %w", err)
+	}
+
+	if seed == "" {
+		return nil, fmt.Errorf("no seed found in credentials file")
+	}
+
+	// Parse the seed into a KeyPair
+	kp, err := nkeys.FromSeed([]byte(seed))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse seed: %w", err)
+	}
+
+	return kp, nil
 }
 
 // extractToken extracts the JWT token from the authorization request

@@ -1,148 +1,82 @@
 # Building nats-k8s-oidc-callout
 
-This document describes how to build the nats-k8s-oidc-callout application for multiple architectures.
+Build instructions for the nats-k8s-oidc-callout application.
 
 ## Prerequisites
 
-- Go 1.23 or later
-- Docker with buildx support (for multi-arch image builds)
+- Go 1.23+
+- Docker with buildx (for multi-arch images)
 - Make
 
 ## Quick Start
 
 ```bash
-# Build binaries for all architectures
-make build-all
-
-# Build Docker image
-make docker-build
+make build-all      # Build binaries for all architectures
+make docker-build   # Build Docker image
 ```
 
 ## Build Process
 
-The project uses a two-stage build process:
+Two-stage build:
+1. **Binary compilation** - Native Go builds for amd64 + arm64
+2. **Docker packaging** - Copy binaries into distroless images
 
-1. **Binary compilation** - Go binaries are built outside Docker for multiple architectures
-2. **Docker packaging** - Pre-built binaries are copied into minimal distroless images
+Benefits: Faster builds, better caching, smaller images
 
-This approach provides:
-- Faster builds (native Go compilation)
-- Better caching
-- Easier multi-architecture support
-- Smaller final images
+## Make Targets
 
-### Output Directory
-
-All build artifacts are placed in the `out/` directory, which is ignored by git. This keeps the repository clean and makes it easy to clean up build artifacts with `make clean`.
-
-## Available Make Targets
-
-### Build Targets
-
+### Build
 ```bash
-# Build for current architecture
-make build
-
-# Build for all architectures (amd64 + arm64)
-make build-all
-
-# Build for specific architecture
-make build-amd64
-make build-arm64
+make build          # Current architecture
+make build-all      # All architectures (amd64 + arm64)
+make build-amd64    # amd64 only
+make build-arm64    # arm64 only
 ```
 
-### Docker Targets
-
+### Docker
 ```bash
-# Build multi-arch Docker image for local testing
-make docker-build
-
-# Build and push multi-arch Docker image to registry
-make docker-push
+make docker-build   # Build multi-arch image locally
+make docker-push    # Build and push to registry
 ```
 
-### Test Targets
-
+### Test
 ```bash
-# Run unit tests
-make test
-
-# Run all tests (unit + integration + e2e)
-make test-all
-
-# Run tests with coverage
-make coverage
+make test           # Unit tests
+make test-all       # All tests (unit + integration + e2e)
+make coverage       # Coverage report
 ```
 
-### Utility Targets
-
+### Utility
 ```bash
-# Display version information
-make version
-
-# Clean build artifacts
-make clean
-
-# Show help
-make help
+make version        # Show version info
+make clean          # Clean build artifacts
+make help           # Show help
 ```
 
 ## Build Configuration
 
-The build process uses the following configuration:
-
-- **Binary name**: `nats-k8s-oidc-callout`
-- **Version**: Determined from git tags (`git describe --tags`)
-- **Commit**: Short git commit hash
-- **Build date**: UTC timestamp
-- **LDFLAGS**: Strips debug info for smaller binaries (`-w -s`)
+- **Binary**: `nats-k8s-oidc-callout`
+- **Version**: From git tags (`git describe --tags`)
+- **LDFLAGS**: Strips debug info (`-w -s`)
+- **Output**: `out/` directory
 
 ## Docker Image
 
-### Base Image
-
-The Docker image uses `gcr.io/distroless/static-debian12:nonroot` which provides:
-- Minimal attack surface (no shell, package manager, or unnecessary tools)
+**Base image:** `gcr.io/distroless/static-debian12:nonroot`
+- Minimal attack surface
 - Non-root user (UID 65532)
-- Static binary support
-- CA certificates for HTTPS connections
+- CA certificates included
 
-### Multi-Architecture Support
+**Multi-arch:** Automatic via `TARGETARCH` build argument
 
-The Dockerfile uses Docker's `TARGETARCH` build argument to select the correct pre-built binary:
-
-```dockerfile
-ARG TARGETARCH
-COPY out/nats-k8s-oidc-callout-linux-${TARGETARCH} /nats-k8s-oidc-callout
-```
-
-This allows building images for both amd64 and arm64 with a single Dockerfile.
-
-### Building Images
-
-```bash
-# Build for local testing (loads into local Docker)
-make docker-build
-
-# Build and push to registry
-make docker-push
-```
-
-The `docker-build` and `docker-push` targets automatically:
-1. Build binaries for amd64 and arm64
-2. Build Docker images for both architectures
-3. Create a multi-arch manifest
-
-## CI/CD Integration
-
-### GitHub Actions Example
+## CI/CD Example
 
 ```yaml
-name: Build and Push Image
+# GitHub Actions
+name: Build and Push
 
 on:
   push:
-    branches: [main]
     tags: ['v*']
 
 jobs:
@@ -150,45 +84,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-
       - uses: actions/setup-go@v4
         with:
           go-version: '1.23'
-
-      - name: Build binaries
+      - name: Build
         run: make build-all
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Login to registry
-        uses: docker/login-action@v2
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        run: |
-          export VERSION=${GITHUB_REF#refs/tags/}
-          make docker-push
+      - name: Docker
+        run: make docker-push
 ```
 
-## Manual Build Steps
+## Manual Build
 
-If you prefer to build manually without Make:
+Without Make:
 
 ```bash
-# Create output directory
+# Build binaries
 mkdir -p out
-
-# Build for amd64
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
   -ldflags="-w -s" \
   -o out/nats-k8s-oidc-callout-linux-amd64 \
   ./cmd/server
 
-# Build for arm64
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
   -ldflags="-w -s" \
   -o out/nats-k8s-oidc-callout-linux-arm64 \
@@ -204,28 +120,15 @@ docker buildx build \
 
 ## Troubleshooting
 
-### Docker buildx not available
-
+**Docker buildx not available:**
 ```bash
-# Create a new buildx builder
 docker buildx create --use
-
-# Verify buildx is working
 docker buildx inspect --bootstrap
 ```
 
-### Binary size
+**Binary size:** ~30MB per architecture (statically compiled, stripped)
 
-The binaries are statically compiled and stripped, resulting in ~30MB per architecture. To further reduce size:
-
-1. Use UPX compression (not recommended for production)
-2. Build with `-ldflags="-w -s"` (already enabled)
-3. Use Go build tags to exclude unused features
-
-### Cross-compilation issues
-
-If you encounter cross-compilation errors:
-
-1. Ensure you're using Go 1.23 or later
-2. Set `CGO_ENABLED=0` to disable CGO
-3. Verify `GOOS` and `GOARCH` are set correctly
+**Cross-compilation issues:**
+- Use Go 1.23+
+- Set `CGO_ENABLED=0`
+- Verify `GOOS` and `GOARCH`
