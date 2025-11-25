@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
@@ -23,7 +24,7 @@ func TestClient_Informer(t *testing.T) {
 	informerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
 
 	// Create our client with the fake informer
-	client := NewClient(informerFactory)
+	client := NewClient(informerFactory, zap.NewNop())
 
 	// Start the informer
 	stopCh := make(chan struct{})
@@ -118,7 +119,7 @@ func TestClient_GetPermissions(t *testing.T) {
 	// Create client with empty informer
 	fakeClient := fake.NewSimpleClientset()
 	informerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
-	client := NewClient(informerFactory)
+	client := NewClient(informerFactory, zap.NewNop())
 
 	// Manually add to cache for testing
 	sa := &corev1.ServiceAccount{
@@ -153,7 +154,7 @@ func TestClient_GetPermissions(t *testing.T) {
 func TestClient_Shutdown(t *testing.T) {
 	fakeClient := fake.NewSimpleClientset()
 	informerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
-	client := NewClient(informerFactory)
+	client := NewClient(informerFactory, zap.NewNop())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()

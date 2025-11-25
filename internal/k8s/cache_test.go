@@ -3,6 +3,7 @@ package k8s
 import (
 	"testing"
 
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -94,7 +95,7 @@ func TestCache_Get(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cache := NewCache()
+			cache := NewCache(zap.NewNop())
 			tt.setupCache(cache)
 
 			pubPerms, subPerms, found := cache.Get(tt.namespace, tt.saName)
@@ -116,7 +117,7 @@ func TestCache_Get(t *testing.T) {
 
 // TestCache_Upsert tests adding and updating ServiceAccounts in cache
 func TestCache_Upsert(t *testing.T) {
-	cache := NewCache()
+	cache := NewCache(zap.NewNop())
 
 	// Add initial ServiceAccount
 	sa1 := &corev1.ServiceAccount{
@@ -161,7 +162,7 @@ func TestCache_Upsert(t *testing.T) {
 
 // TestCache_Delete tests removing ServiceAccounts from cache
 func TestCache_Delete(t *testing.T) {
-	cache := NewCache()
+	cache := NewCache(zap.NewNop())
 
 	// Add ServiceAccount
 	sa := &corev1.ServiceAccount{
@@ -194,42 +195,81 @@ func TestCache_Delete(t *testing.T) {
 // TestParseSubjects tests parsing comma-separated NATS subjects from annotations
 func TestParseSubjects(t *testing.T) {
 	tests := []struct {
-		name       string
-		annotation string
-		want       []string
+		name           string
+		annotation     string
+		wantSubjects   []string
+		wantFiltered   []string
 	}{
 		{
-			name:       "Multiple subjects with whitespace",
-			annotation: "platform.events.>, shared.metrics.*",
-			want:       []string{"platform.events.>", "shared.metrics.*"},
+			name:           "Multiple subjects with whitespace",
+			annotation:     "platform.events.>, shared.metrics.*",
+			wantSubjects:   []string{"platform.events.>", "shared.metrics.*"},
+			wantFiltered:   []string{},
 		},
 		{
-			name:       "Single subject",
-			annotation: "platform.commands.*",
-			want:       []string{"platform.commands.*"},
+			name:           "Single subject",
+			annotation:     "platform.commands.*",
+			wantSubjects:   []string{"platform.commands.*"},
+			wantFiltered:   []string{},
 		},
 		{
-			name:       "Empty annotation",
-			annotation: "",
-			want:       []string{},
+			name:           "Empty annotation",
+			annotation:     "",
+			wantSubjects:   []string{},
+			wantFiltered:   []string{},
 		},
 		{
-			name:       "Multiple subjects with extra whitespace",
-			annotation: "  a.> ,  b.* , c  ",
-			want:       []string{"a.>", "b.*", "c"},
+			name:           "Multiple subjects with extra whitespace",
+			annotation:     "  a.> ,  b.* , c  ",
+			wantSubjects:   []string{"a.>", "b.*", "c"},
+			wantFiltered:   []string{},
 		},
 		{
-			name:       "Trailing comma",
-			annotation: "a.>, b.*,",
-			want:       []string{"a.>", "b.*"},
+			name:           "Trailing comma",
+			annotation:     "a.>, b.*,",
+			wantSubjects:   []string{"a.>", "b.*"},
+			wantFiltered:   []string{},
+		},
+		{
+			name:           "Filter _INBOX.> pattern",
+			annotation:     "_INBOX.>, platform.events.>",
+			wantSubjects:   []string{"platform.events.>"},
+			wantFiltered:   []string{"_INBOX.>"},
+		},
+		{
+			name:           "Filter _REPLY.> pattern",
+			annotation:     "_REPLY.>, platform.events.>",
+			wantSubjects:   []string{"platform.events.>"},
+			wantFiltered:   []string{"_REPLY.>"},
+		},
+		{
+			name:           "Filter custom _INBOX pattern",
+			annotation:     "_INBOX_custom.>, platform.events.>",
+			wantSubjects:   []string{"platform.events.>"},
+			wantFiltered:   []string{"_INBOX_custom.>"},
+		},
+		{
+			name:           "Filter multiple internal patterns",
+			annotation:     "_INBOX.>, _REPLY.>, platform.events.>, _INBOX_custom.>",
+			wantSubjects:   []string{"platform.events.>"},
+			wantFiltered:   []string{"_INBOX.>", "_REPLY.>", "_INBOX_custom.>"},
+		},
+		{
+			name:           "Only internal patterns",
+			annotation:     "_INBOX.>, _REPLY.>",
+			wantSubjects:   []string{},
+			wantFiltered:   []string{"_INBOX.>", "_REPLY.>"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := parseSubjects(tt.annotation)
-			if !equalStringSlices(got, tt.want) {
-				t.Errorf("parseSubjects() = %v, want %v", got, tt.want)
+			gotSubjects, gotFiltered := parseSubjects(tt.annotation)
+			if !equalStringSlices(gotSubjects, tt.wantSubjects) {
+				t.Errorf("parseSubjects() subjects = %v, want %v", gotSubjects, tt.wantSubjects)
+			}
+			if !equalStringSlices(gotFiltered, tt.wantFiltered) {
+				t.Errorf("parseSubjects() filtered = %v, want %v", gotFiltered, tt.wantFiltered)
 			}
 		})
 	}

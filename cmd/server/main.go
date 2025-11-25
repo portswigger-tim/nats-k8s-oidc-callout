@@ -73,7 +73,7 @@ func run() error {
 	informerFactory := informers.NewSharedInformerFactory(clientset, 0)
 
 	// Create K8s client with ServiceAccount cache
-	k8sClient := k8s.NewClient(informerFactory)
+	k8sClient := k8s.NewClient(informerFactory, logger)
 
 	// Start informers
 	stopCh := make(chan struct{})

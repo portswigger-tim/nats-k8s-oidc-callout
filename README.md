@@ -57,6 +57,7 @@ metadata:
   annotations:
     nats.io/allowed-pub-subjects: "bar.>, platform.commands.*"
     nats.io/allowed-sub-subjects: "platform.events.*, shared.status"
+    # ⚠️ Do not add _INBOX or _REPLY patterns - they are automatic
 ```
 
 This grants:

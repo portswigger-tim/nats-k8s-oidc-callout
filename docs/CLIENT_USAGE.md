@@ -72,6 +72,7 @@ metadata:
     nats.io/allowed-pub-subjects: "platform.events.>, shared.commands.*"
     # Allow subscribing to additional subjects
     nats.io/allowed-sub-subjects: "platform.notifications.*, shared.status"
+    # ⚠️ Do not add _INBOX or _REPLY patterns - they are automatic
 ```
 
 **Resulting Permissions:**
@@ -79,6 +80,20 @@ metadata:
 - **Publish**: `my-namespace.>`, `platform.events.>`, `shared.commands.*`
 - **Subscribe**: `_INBOX.>`, `_INBOX_my-namespace_my-service-account.>`, `my-namespace.>`, `platform.notifications.*`, `shared.status`
 - **Request-Reply**: Enabled via `allow_responses: true` (MaxMsgs: 1, no time limit)
+
+### Automatic Permissions
+
+The auth callout service automatically grants the following permissions without requiring annotation configuration:
+
+**Publish Permissions:**
+- `<namespace>.>` - Your namespace scope (default isolation)
+
+**Subscribe Permissions:**
+- `_INBOX.>` - Standard NATS inbox for request-reply (convenience)
+- `_INBOX_<namespace>_<serviceaccount>.>` - Private inbox for enhanced security
+- `<namespace>.>` - Your namespace scope (default isolation)
+
+**Important:** Do NOT add `_INBOX*` or `_REPLY*` patterns to your ServiceAccount annotations. These are automatically managed and will be filtered out if specified. Only use annotations to grant **additional** cross-namespace access beyond the automatic defaults.
 
 ### Request-Reply Security
 
@@ -646,6 +661,55 @@ spec:
               expirationSeconds: 3600
               path: token
 ```
+
+## Troubleshooting
+
+### Warning: Filtered NATS internal subjects
+
+If you see this warning in the auth callout service logs:
+
+```
+WARN Filtered NATS internal subjects from ServiceAccount annotation
+  namespace=default
+  serviceaccount=my-service
+  annotation=nats.io/allowed-sub-subjects
+  filtered=["_INBOX.>", "_REPLY.>"]
+```
+
+**Cause:** Your ServiceAccount annotations include `_INBOX` or `_REPLY` patterns that are automatically managed by the auth callout service.
+
+**Solution:** Remove these patterns from your annotations - they are automatically granted:
+
+- **Standard inbox**: `_INBOX.>` (always enabled for request-reply convenience)
+- **Private inbox**: `_INBOX_<namespace>_<serviceaccount>.>` (always enabled for enhanced security)
+- **Reply subjects**: Managed by NATS automatically
+
+**Example Fix:**
+
+```yaml
+# ❌ Before (unnecessary)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: my-service
+  namespace: default
+  annotations:
+    nats.io/allowed-sub-subjects: "_INBOX.>, other.subjects.>"
+
+# ✅ After (correct)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: my-service
+  namespace: default
+  annotations:
+    nats.io/allowed-sub-subjects: "other.subjects.>"
+```
+
+**Why this matters:**
+- Reduces confusion about what permissions are required
+- Prevents duplicate permissions in the permission list
+- Makes it clear that inbox patterns are system-managed, not user-configurable
 
 ## Additional Resources
 

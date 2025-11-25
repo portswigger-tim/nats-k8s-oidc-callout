@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/informers"
@@ -15,11 +16,12 @@ type Client struct {
 	cache    *Cache
 	informer cache.SharedIndexInformer
 	stopCh   chan struct{}
+	logger   *zap.Logger
 }
 
 // NewClient creates a new Kubernetes client with ServiceAccount informer
-func NewClient(factory informers.SharedInformerFactory) *Client {
-	saCache := NewCache()
+func NewClient(factory informers.SharedInformerFactory, logger *zap.Logger) *Client {
+	saCache := NewCache(logger)
 
 	// Get the ServiceAccount informer
 	informer := factory.Core().V1().ServiceAccounts().Informer()
@@ -28,6 +30,7 @@ func NewClient(factory informers.SharedInformerFactory) *Client {
 		cache:    saCache,
 		informer: informer,
 		stopCh:   make(chan struct{}),
+		logger:   logger,
 	}
 
 	// Register event handlers

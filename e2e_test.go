@@ -231,7 +231,7 @@ authorization {
 	informerFactory := informers.NewSharedInformerFactory(clientset, 0)
 
 	// Create K8s client
-	k8sClient := internalK8s.NewClient(informerFactory)
+	k8sClient := internalK8s.NewClient(informerFactory, logger)
 
 	// Start informers
 	stopCh := make(chan struct{})
@@ -620,7 +620,7 @@ authorization {
 	defer logger.Sync()
 
 	informerFactory := informers.NewSharedInformerFactory(clientset, 0)
-	k8sClient := internalK8s.NewClient(informerFactory)
+	k8sClient := internalK8s.NewClient(informerFactory, logger)
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)
@@ -829,7 +829,7 @@ authorization {
 	defer logger.Sync()
 
 	informerFactory := informers.NewSharedInformerFactory(clientset, 0)
-	k8sClient := internalK8s.NewClient(informerFactory)
+	k8sClient := internalK8s.NewClient(informerFactory, logger)
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)
@@ -1155,7 +1155,7 @@ authorization {
 	defer logger.Sync()
 
 	informerFactory := informers.NewSharedInformerFactory(clientset, 0)
-	k8sClient := internalK8s.NewClient(informerFactory)
+	k8sClient := internalK8s.NewClient(informerFactory, logger)
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)

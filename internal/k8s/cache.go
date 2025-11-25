@@ -5,6 +5,8 @@ import (
 	"strings"
 	"sync"
 
+	httpmetrics "github.com/portswigger-tim/nats-k8s-oidc-callout/internal/http"
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -22,14 +24,16 @@ type Permissions struct {
 
 // Cache is a thread-safe in-memory cache of ServiceAccount permissions
 type Cache struct {
-	mu    sync.RWMutex
-	cache map[string]*Permissions // key: "namespace/name"
+	mu     sync.RWMutex
+	cache  map[string]*Permissions // key: "namespace/name"
+	logger *zap.Logger
 }
 
 // NewCache creates a new empty ServiceAccount cache
-func NewCache() *Cache {
+func NewCache(logger *zap.Logger) *Cache {
 	return &Cache{
-		cache: make(map[string]*Permissions),
+		cache:  make(map[string]*Permissions),
+		logger: logger,
 	}
 }
 
@@ -54,7 +58,7 @@ func (c *Cache) upsert(sa *corev1.ServiceAccount) {
 	defer c.mu.Unlock()
 
 	key := makeKey(sa.Namespace, sa.Name)
-	perms := buildPermissions(sa)
+	perms := buildPermissions(sa, c.logger)
 	c.cache[key] = perms
 }
 
@@ -68,7 +72,7 @@ func (c *Cache) delete(namespace, name string) {
 }
 
 // buildPermissions constructs NATS permissions from a ServiceAccount's annotations
-func buildPermissions(sa *corev1.ServiceAccount) *Permissions {
+func buildPermissions(sa *corev1.ServiceAccount, logger *zap.Logger) *Permissions {
 	perms := &Permissions{}
 
 	// Default: namespace scope (always included)
@@ -84,35 +88,70 @@ func buildPermissions(sa *corev1.ServiceAccount) *Permissions {
 
 	// Add additional subjects from annotations
 	if pubAnnotation, ok := sa.Annotations[AnnotationAllowedPubSubjects]; ok {
-		additionalPub := parseSubjects(pubAnnotation)
+		additionalPub, filteredPub := parseSubjects(pubAnnotation)
+		if len(filteredPub) > 0 {
+			logger.Warn("Filtered NATS internal subjects from ServiceAccount annotation",
+				zap.String("namespace", sa.Namespace),
+				zap.String("serviceaccount", sa.Name),
+				zap.String("annotation", AnnotationAllowedPubSubjects),
+				zap.Strings("filtered", filteredPub))
+
+			// Increment metrics for each filtered subject
+			for _, subject := range filteredPub {
+				httpmetrics.IncrementFilteredSubjects(sa.Namespace, sa.Name, AnnotationAllowedPubSubjects, subject)
+			}
+		}
 		perms.Publish = append(perms.Publish, additionalPub...)
 	}
 
 	if subAnnotation, ok := sa.Annotations[AnnotationAllowedSubSubjects]; ok {
-		additionalSub := parseSubjects(subAnnotation)
+		additionalSub, filteredSub := parseSubjects(subAnnotation)
+		if len(filteredSub) > 0 {
+			logger.Warn("Filtered NATS internal subjects from ServiceAccount annotation",
+				zap.String("namespace", sa.Namespace),
+				zap.String("serviceaccount", sa.Name),
+				zap.String("annotation", AnnotationAllowedSubSubjects),
+				zap.Strings("filtered", filteredSub))
+
+			// Increment metrics for each filtered subject
+			for _, subject := range filteredSub {
+				httpmetrics.IncrementFilteredSubjects(sa.Namespace, sa.Name, AnnotationAllowedSubSubjects, subject)
+			}
+		}
 		perms.Subscribe = append(perms.Subscribe, additionalSub...)
 	}
 
 	return perms
 }
 
-// parseSubjects parses a comma-separated list of NATS subjects from an annotation value
-func parseSubjects(annotation string) []string {
+// parseSubjects parses a comma-separated list of NATS subjects from an annotation value.
+// Filters out any _INBOX and _REPLY patterns as those are automatically managed by NATS.
+// Returns both the parsed subjects and a list of filtered subjects.
+func parseSubjects(annotation string) (subjects []string, filtered []string) {
 	if annotation == "" {
-		return []string{}
+		return []string{}, []string{}
 	}
 
 	parts := strings.Split(annotation, ",")
-	subjects := make([]string, 0, len(parts))
+	subjects = make([]string, 0, len(parts))
+	filtered = make([]string, 0)
 
 	for _, part := range parts {
 		trimmed := strings.TrimSpace(part)
-		if trimmed != "" {
-			subjects = append(subjects, trimmed)
+		if trimmed == "" {
+			continue
 		}
+
+		// Filter out NATS internal patterns (automatically managed)
+		if strings.HasPrefix(trimmed, "_INBOX") || strings.HasPrefix(trimmed, "_REPLY") {
+			filtered = append(filtered, trimmed)
+			continue
+		}
+
+		subjects = append(subjects, trimmed)
 	}
 
-	return subjects
+	return subjects, filtered
 }
 
 // makeKey creates a cache key from namespace and name
