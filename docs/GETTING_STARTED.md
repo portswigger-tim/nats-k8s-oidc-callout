@@ -208,11 +208,11 @@ Cache (like a phonebook):
 ┌──────────────────────┬────────────────────────────────────────────┐
 │ Key                  │ Permissions                                │
 ├──────────────────────┼────────────────────────────────────────────┤
-│ my-app/my-service   │ Publish: my-app.>, _INBOX.>, events.>     │
-│                      │ Subscribe: my-app.>, _INBOX.>, commands.* │
+│ my-app/my-service   │ Publish: _INBOX.>, my-app.>, events.>     │
+│                      │ Subscribe: _INBOX.>, my-app.>, commands.* │
 ├──────────────────────┼────────────────────────────────────────────┤
-│ other-app/service-2 │ Publish: other-app.>, _INBOX.>            │
-│                      │ Subscribe: other-app.>, _INBOX.>          │
+│ other-app/service-2 │ Publish: _INBOX.>, other-app.>            │
+│                      │ Subscribe: _INBOX.>, other-app.>          │
 └──────────────────────┴────────────────────────────────────────────┘
 ```
 
@@ -304,8 +304,8 @@ Annotations:
        serviceAccount: "my-service"
    ↓ Look up in cache:
        Found! Permissions:
-         Publish: ["production.>", "_INBOX.>", "orders.>", "inventory.check"]
-         Subscribe: ["production.>", "_INBOX.>", "orders.responses.*"]
+         Publish: ["_INBOX.>", "production.>", "orders.>", "inventory.check"]
+         Subscribe: ["_INBOX.>", "production.>", "orders.responses.*"]
    ↓ Build response
 
 4. NATS: "Welcome! You're authorized!"
@@ -390,8 +390,8 @@ Every ServiceAccount gets **namespace isolation** by default:
 ```
 ServiceAccount "my-service" in namespace "production"
 Default permissions:
-  Publish: ["production.>", "_INBOX.>"]      # Your namespace + request-reply
-  Subscribe: ["production.>", "_INBOX.>"]    # Your namespace + request-reply
+  Publish: ["_INBOX.>", "production.>"]      # Request-reply + your namespace
+  Subscribe: ["_INBOX.>", "production.>"]    # Request-reply + your namespace
 ```
 
 **Note:** `_INBOX.>` is automatically included to enable NATS request-reply patterns.

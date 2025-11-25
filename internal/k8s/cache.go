@@ -73,9 +73,9 @@ func buildPermissions(sa *corev1.ServiceAccount) *Permissions {
 
 	// Default: namespace scope (always included)
 	defaultSubject := fmt.Sprintf("%s.>", sa.Namespace)
-	// Both Publish and Subscribe include namespace scope AND _INBOX.> for request-reply patterns
-	perms.Publish = []string{defaultSubject, "_INBOX.>"}
-	perms.Subscribe = []string{defaultSubject, "_INBOX.>"}
+	// Both Publish and Subscribe include _INBOX.> for request-reply patterns AND namespace scope
+	perms.Publish = []string{"_INBOX.>", defaultSubject}
+	perms.Subscribe = []string{"_INBOX.>", defaultSubject}
 
 	// Add additional subjects from annotations
 	if pubAnnotation, ok := sa.Annotations[AnnotationAllowedPubSubjects]; ok {

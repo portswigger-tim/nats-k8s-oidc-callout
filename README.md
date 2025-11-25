@@ -60,8 +60,8 @@ metadata:
 ```
 
 This grants:
-- **Publish**: `foo.>`, `_INBOX.>`, `bar.>`, `platform.commands.*`
-- **Subscribe**: `foo.>`, `_INBOX.>`, `platform.events.*`, `shared.status`
+- **Publish**: `_INBOX.>`, `foo.>`, `bar.>`, `platform.commands.*`
+- **Subscribe**: `_INBOX.>`, `foo.>`, `platform.events.*`, `shared.status`
 
 Note: `_INBOX.>` is included by default in both publish and subscribe permissions to enable NATS request-reply patterns.
 

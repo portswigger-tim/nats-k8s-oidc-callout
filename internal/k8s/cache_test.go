@@ -35,8 +35,8 @@ func TestCache_Get(t *testing.T) {
 				}
 				c.upsert(sa)
 			},
-			wantPubPerms: []string{"hakawai.>", "_INBOX.>", "platform.events.>", "shared.metrics.*"},
-			wantSubPerms: []string{"hakawai.>", "_INBOX.>", "platform.commands.*", "shared.status"},
+			wantPubPerms: []string{"_INBOX.>", "hakawai.>", "platform.events.>", "shared.metrics.*"},
+			wantSubPerms: []string{"_INBOX.>", "hakawai.>", "platform.commands.*", "shared.status"},
 			wantFound:    true,
 		},
 		{
@@ -55,8 +55,8 @@ func TestCache_Get(t *testing.T) {
 				}
 				c.upsert(sa)
 			},
-			wantPubPerms: []string{"default.>", "_INBOX.>", "external.>"},
-			wantSubPerms: []string{"default.>", "_INBOX.>"},
+			wantPubPerms: []string{"_INBOX.>", "default.>", "external.>"},
+			wantSubPerms: []string{"_INBOX.>", "default.>"},
 			wantFound:    true,
 		},
 		{
@@ -75,8 +75,8 @@ func TestCache_Get(t *testing.T) {
 				}
 				c.upsert(sa)
 			},
-			wantPubPerms: []string{"production.>", "_INBOX.>"},
-			wantSubPerms: []string{"production.>", "_INBOX.>"},
+			wantPubPerms: []string{"_INBOX.>", "production.>"},
+			wantSubPerms: []string{"_INBOX.>", "production.>"},
 			wantFound:    true,
 		},
 		{
@@ -134,8 +134,8 @@ func TestCache_Upsert(t *testing.T) {
 	if !found {
 		t.Fatal("Expected ServiceAccount to be in cache after upsert")
 	}
-	if !equalStringSlices(pubPerms, []string{"default.>", "_INBOX.>", "initial.>"}) {
-		t.Errorf("Initial pubPerms = %v, want [default.> _INBOX.> initial.>]", pubPerms)
+	if !equalStringSlices(pubPerms, []string{"_INBOX.>", "default.>", "initial.>"}) {
+		t.Errorf("Initial pubPerms = %v, want [_INBOX.> default.> initial.>]", pubPerms)
 	}
 
 	// Update with new annotations
@@ -154,8 +154,8 @@ func TestCache_Upsert(t *testing.T) {
 	if !found {
 		t.Fatal("Expected ServiceAccount to still be in cache after update")
 	}
-	if !equalStringSlices(pubPerms, []string{"default.>", "_INBOX.>", "updated.>", "another.*"}) {
-		t.Errorf("Updated pubPerms = %v, want [default.> _INBOX.> updated.> another.*]", pubPerms)
+	if !equalStringSlices(pubPerms, []string{"_INBOX.>", "default.>", "updated.>", "another.*"}) {
+		t.Errorf("Updated pubPerms = %v, want [_INBOX.> default.> updated.> another.*]", pubPerms)
 	}
 }
 

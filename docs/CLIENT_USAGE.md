@@ -76,8 +76,8 @@ metadata:
 
 **Resulting Permissions:**
 
-- **Publish**: `my-namespace.>`, `_INBOX.>`, `platform.events.>`, `shared.commands.*`
-- **Subscribe**: `my-namespace.>`, `_INBOX.>`, `platform.notifications.*`, `shared.status`
+- **Publish**: `_INBOX.>`, `my-namespace.>`, `platform.events.>`, `shared.commands.*`
+- **Subscribe**: `_INBOX.>`, `my-namespace.>`, `platform.notifications.*`, `shared.status`
 
 **Note:** `_INBOX.>` is automatically included in both publish and subscribe permissions to enable NATS request-reply patterns.
 
