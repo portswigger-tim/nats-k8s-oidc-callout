@@ -347,10 +347,91 @@ authorization {
 		sub.Unsubscribe()
 	}
 
+	// Test 5: Subscribing to disallowed subjects should fail
+	t.Log("Test 5: Subscribing to disallowed subjects should fail")
+
+	disallowedSubs := []string{"production.events", "admin.commands"}
+	for _, subject := range disallowedSubs {
+		sub, err := testConn.SubscribeSync(subject)
+		if err != nil {
+			t.Logf("Correctly rejected subscription to disallowed subject %s: %v", subject, err)
+			continue
+		}
+
+		// Subscription errors are async in NATS, flush and check LastError()
+		err = testConn.Flush()
+		if err != nil {
+			t.Logf("Flush returned error for disallowed subscription %s: %v", subject, err)
+			sub.Unsubscribe()
+			continue
+		}
+
+		// Check for async permission error
+		if lastErr := testConn.LastError(); lastErr != nil {
+			t.Logf("Correctly rejected subscription to disallowed subject %s: %v", subject, lastErr)
+			sub.Unsubscribe()
+		} else {
+			sub.Unsubscribe()
+			t.Errorf("Should have rejected subscription to disallowed subject: %s", subject)
+		}
+	}
+
+	// Test 6: Full pub/sub message flow
+	t.Log("Test 6: Full pub/sub message flow (publish and receive)")
+
+	// Subscribe to test.messages
+	msgSub, err := testConn.SubscribeSync("test.messages")
+	if err != nil {
+		t.Errorf("Failed to subscribe for message flow test: %v", err)
+	} else {
+		defer msgSub.Unsubscribe()
+
+		// Publish a message
+		testMsg := []byte("Hello from E2E test")
+		err = testConn.Publish("test.messages", testMsg)
+		if err != nil {
+			t.Errorf("Failed to publish test message: %v", err)
+		} else {
+			// Try to receive the message
+			msg, err := msgSub.NextMsg(2 * time.Second)
+			if err != nil {
+				t.Errorf("Failed to receive published message: %v", err)
+			} else if string(msg.Data) != string(testMsg) {
+				t.Errorf("Received message mismatch: got %q, want %q", string(msg.Data), string(testMsg))
+			} else {
+				t.Logf("Successfully published and received message: %s", string(msg.Data))
+			}
+		}
+	}
+
+	// Test 7: Request-reply pattern (validates _INBOX.> permissions)
+	t.Log("Test 7: Request-reply pattern (validates _INBOX.> permissions)")
+
+	// Start a simple responder
+	responderSub, err := testConn.Subscribe("test.request", func(msg *natsclient.Msg) {
+		// Responder needs publish permission to _INBOX.> to send reply
+		msg.Respond([]byte("response data"))
+	})
+	if err != nil {
+		t.Errorf("Failed to create responder: %v", err)
+	} else {
+		defer responderSub.Unsubscribe()
+
+		// Make a request (requires subscribe permission to _INBOX.> to receive reply)
+		response, err := testConn.Request("test.request", []byte("request data"), 2*time.Second)
+		if err != nil {
+			t.Errorf("Request-reply failed (check _INBOX.> permissions): %v", err)
+		} else if string(response.Data) != "response data" {
+			t.Errorf("Response mismatch: got %q, want %q", string(response.Data), "response data")
+		} else {
+			t.Log("Request-reply pattern successful - _INBOX.> permissions working")
+		}
+	}
+
 	testConn.Close()
 
 	// Step 11: Test authentication failure without token
-	t.Log("Test 5: Client without JWT should be rejected")
+	t.Log("Test 8: Client without JWT should be rejected")
 
 	// Try to connect without JWT - should fail
 	noAuthConn, err := natsclient.Connect(
@@ -368,7 +449,10 @@ authorization {
 	t.Log("E2E test passed - auth callout fully validated")
 	t.Log("  - Real Kubernetes JWT token created and used")
 	t.Log("  - JWT authentication working with NATS auth callout")
-	t.Log("  - Permission enforcement working (allowed/denied subjects)")
+	t.Log("  - Publish permission enforcement working (allowed/denied subjects)")
+	t.Log("  - Subscribe permission enforcement working (allowed/denied subjects)")
+	t.Log("  - Full pub/sub message flow validated")
+	t.Log("  - Request-reply pattern working (_INBOX.> permissions validated)")
 	t.Log("  - ServiceAccount annotations respected")
 	t.Log("  - Full end-to-end integration validated")
 }
