@@ -48,7 +48,7 @@ internal/jwt/        - JWT validation
 internal/k8s/        - ServiceAccount cache
 internal/auth/       - Authorization logic
 internal/nats/       - NATS connection
-e2e_test.go          - Integration tests
+e2e_suite_test.go    - Integration tests
 docs/                - Documentation
 ```
 
