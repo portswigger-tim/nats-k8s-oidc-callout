@@ -952,6 +952,363 @@ authorization {
 	t.Log("  - Request-reply security working as expected")
 }
 
+// TestE2E_PrivateInboxPattern tests that private inbox pattern provides isolation between ServiceAccounts
+func TestE2E_PrivateInboxPattern(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping E2E test in short mode")
+	}
+
+	ctx := context.Background()
+
+	// Step 1: Start k3s cluster
+	t.Log("Starting k3s cluster...")
+	k3sContainer, err := k3s.Run(ctx, "rancher/k3s:v1.31.3-k3s1")
+	if err != nil {
+		t.Fatalf("Failed to start k3s: %v", err)
+	}
+	defer k3sContainer.Terminate(ctx)
+
+	kubeConfigYAML, err := k3sContainer.GetKubeConfig(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get kubeconfig: %v", err)
+	}
+
+	kubeconfigFile, err := os.CreateTemp("", "kubeconfig-*.yaml")
+	if err != nil {
+		t.Fatalf("Failed to create kubeconfig file: %v", err)
+	}
+	defer os.Remove(kubeconfigFile.Name())
+
+	if _, err := kubeconfigFile.Write(kubeConfigYAML); err != nil {
+		t.Fatalf("Failed to write kubeconfig: %v", err)
+	}
+	kubeconfigFile.Close()
+
+	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigFile.Name())
+	if err != nil {
+		t.Fatalf("Failed to build config: %v", err)
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		t.Fatalf("Failed to create clientset: %v", err)
+	}
+
+	// Step 2: Create two ServiceAccounts
+	t.Log("Creating ServiceAccount 'service-a' and 'service-b'...")
+	serviceA := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "service-a",
+			Namespace: "default",
+			Annotations: map[string]string{
+				"nats.io/allowed-pub-subjects": "test.>",
+				"nats.io/allowed-sub-subjects": "test.>, _INBOX.>",
+			},
+		},
+	}
+
+	serviceB := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "service-b",
+			Namespace: "default",
+			Annotations: map[string]string{
+				"nats.io/allowed-pub-subjects": "test.>",
+				"nats.io/allowed-sub-subjects": "test.>, _INBOX.>",
+			},
+		},
+	}
+
+	_, err = clientset.CoreV1().ServiceAccounts("default").Create(ctx, serviceA, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("Failed to create ServiceAccount service-a: %v", err)
+	}
+
+	_, err = clientset.CoreV1().ServiceAccounts("default").Create(ctx, serviceB, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("Failed to create ServiceAccount service-b: %v", err)
+	}
+
+	t.Log("ServiceAccounts created successfully")
+
+	// Step 3: Start NATS server
+	t.Log("Starting NATS server...")
+	authServiceKey, _ := nkeys.CreateAccount()
+	authServicePubKey, _ := authServiceKey.PublicKey()
+
+	natsConfig := fmt.Sprintf(`
+port: 4222
+debug: true
+trace: true
+authorization {
+	users: [
+		{ user: "auth-service", password: "auth-service-pass" }
+	]
+	auth_callout {
+		issuer: %s
+		auth_users: [ "auth-service" ]
+	}
+}
+`, authServicePubKey)
+
+	natsConfigFile, err := os.CreateTemp("", "nats-config-*.conf")
+	if err != nil {
+		t.Fatalf("Failed to create NATS config: %v", err)
+	}
+	defer os.Remove(natsConfigFile.Name())
+
+	if _, err := natsConfigFile.WriteString(natsConfig); err != nil {
+		t.Fatalf("Failed to write NATS config: %v", err)
+	}
+	natsConfigFile.Close()
+
+	natsReq := testcontainers.ContainerRequest{
+		Image:        "nats:latest",
+		ExposedPorts: []string{"4222/tcp"},
+		Cmd:          []string{"-c", "/etc/nats/nats.conf"},
+		Files: []testcontainers.ContainerFile{
+			{
+				HostFilePath:      natsConfigFile.Name(),
+				ContainerFilePath: "/etc/nats/nats.conf",
+				FileMode:          0644,
+			},
+		},
+		WaitingFor: wait.ForLog("Server is ready").WithStartupTimeout(30 * time.Second),
+	}
+
+	natsContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: natsReq,
+		Started:          true,
+	})
+	if err != nil {
+		t.Fatalf("Failed to start NATS: %v", err)
+	}
+	defer natsContainer.Terminate(ctx)
+
+	host, _ := natsContainer.Host(ctx)
+	mappedPort, _ := natsContainer.MappedPort(ctx, "4222")
+	natsURL := fmt.Sprintf("nats://%s:%s", host, mappedPort.Port())
+
+	// Step 4: Create tokens for both ServiceAccounts
+	t.Log("Creating ServiceAccount tokens...")
+	expirationSeconds := int64(3600)
+
+	tokenRequestA := &authv1.TokenRequest{
+		Spec: authv1.TokenRequestSpec{
+			Audiences:         []string{"nats"},
+			ExpirationSeconds: &expirationSeconds,
+		},
+	}
+
+	tokenResultA, err := clientset.CoreV1().ServiceAccounts("default").CreateToken(
+		ctx,
+		"service-a",
+		tokenRequestA,
+		metav1.CreateOptions{},
+	)
+	if err != nil {
+		t.Fatalf("Failed to create ServiceAccount token for service-a: %v", err)
+	}
+	tokenA := tokenResultA.Status.Token
+
+	tokenRequestB := &authv1.TokenRequest{
+		Spec: authv1.TokenRequestSpec{
+			Audiences:         []string{"nats"},
+			ExpirationSeconds: &expirationSeconds,
+		},
+	}
+
+	tokenResultB, err := clientset.CoreV1().ServiceAccounts("default").CreateToken(
+		ctx,
+		"service-b",
+		tokenRequestB,
+		metav1.CreateOptions{},
+	)
+	if err != nil {
+		t.Fatalf("Failed to create ServiceAccount token for service-b: %v", err)
+	}
+	tokenB := tokenResultB.Status.Token
+
+	// Step 5: Set up auth service
+	t.Log("Starting auth service...")
+	mockValidator := &mockJWTValidator{
+		validateFunc: func(token string) (*internalJWT.Claims, error) {
+			if token == tokenA {
+				return &internalJWT.Claims{
+					Namespace:      "default",
+					ServiceAccount: "service-a",
+				}, nil
+			}
+			if token == tokenB {
+				return &internalJWT.Claims{
+					Namespace:      "default",
+					ServiceAccount: "service-b",
+				}, nil
+			}
+			return nil, fmt.Errorf("unknown token")
+		},
+	}
+
+	logger, err := zap.NewDevelopment()
+	if err != nil {
+		t.Fatalf("Failed to create logger: %v", err)
+	}
+	defer logger.Sync()
+
+	informerFactory := informers.NewSharedInformerFactory(clientset, 0)
+	k8sClient := internalK8s.NewClient(informerFactory)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	informerFactory.Start(stopCh)
+	informerFactory.WaitForCacheSync(stopCh)
+	time.Sleep(500 * time.Millisecond)
+
+	authHandler := auth.NewHandler(mockValidator, k8sClient)
+
+	authServiceURL := fmt.Sprintf("nats://auth-service:auth-service-pass@%s:%s", host, mappedPort.Port())
+	natsClient, err := internalNATS.NewClient(authServiceURL, authHandler, logger)
+	if err != nil {
+		t.Fatalf("Failed to create NATS client: %v", err)
+	}
+
+	natsClient.SetSigningKey(authServiceKey)
+
+	if err := natsClient.Start(ctx); err != nil {
+		t.Fatalf("Failed to start NATS client: %v", err)
+	}
+	defer natsClient.Shutdown(ctx)
+
+	time.Sleep(500 * time.Millisecond)
+
+	// Step 6: Test 1 - Service-a uses private inbox pattern
+	t.Log("Test 1: Service-a using private inbox pattern (_INBOX_default_service-a.)")
+
+	// Connect service-a with private inbox
+	// CustomInboxPrefix should not include the trailing dot - NATS adds it
+	connA, err := natsclient.Connect(
+		natsURL,
+		natsclient.Token(tokenA),
+		natsclient.CustomInboxPrefix("_INBOX_default_service-a"), // Use private inbox prefix
+		natsclient.Timeout(5*time.Second),
+	)
+	if err != nil {
+		t.Fatalf("Failed to connect service-a: %v", err)
+	}
+	defer connA.Close()
+
+	// Set up responder on service-a
+	responderSub, err := connA.Subscribe("test.private-inbox-request", func(msg *natsclient.Msg) {
+		t.Logf("Service-a responder: received request, reply inbox: %s", msg.Reply)
+		msg.Respond([]byte("response from service-a"))
+	})
+	if err != nil {
+		t.Fatalf("Failed to create responder on service-a: %v", err)
+	}
+	defer responderSub.Unsubscribe()
+
+	// Make request from service-a (using private inbox for reply)
+	response, err := connA.Request("test.private-inbox-request", []byte("request from service-a"), 2*time.Second)
+	if err != nil {
+		t.Fatalf("Request failed with private inbox: %v", err)
+	}
+
+	if string(response.Data) != "response from service-a" {
+		t.Errorf("Unexpected response: got %q, want %q", string(response.Data), "response from service-a")
+	} else {
+		t.Log("✅ Private inbox request-reply successful")
+	}
+
+	// Step 7: Test 2 - Service-b tries to eavesdrop on service-a's private inbox
+	t.Log("Test 2: Service-b trying to eavesdrop on service-a's private inbox")
+
+	// Connect service-b
+	connB, err := natsclient.Connect(
+		natsURL,
+		natsclient.Token(tokenB),
+		natsclient.Timeout(5*time.Second),
+	)
+	if err != nil {
+		t.Fatalf("Failed to connect service-b: %v", err)
+	}
+	defer connB.Close()
+
+	// Try to subscribe to service-a's private inbox - should FAIL
+	privateInboxSubject := "_INBOX_default_service-a.test123"
+	eavesdropSub, err := connB.SubscribeSync(privateInboxSubject)
+	if err != nil {
+		t.Logf("Immediate subscription error (expected): %v", err)
+	} else {
+		// Subscription might succeed initially, but flush should reveal permission error
+		flushErr := connB.Flush()
+		if flushErr != nil {
+			t.Logf("✅ Eavesdrop correctly rejected on flush: %v", flushErr)
+			eavesdropSub.Unsubscribe()
+		} else if lastErr := connB.LastError(); lastErr != nil {
+			t.Logf("✅ Eavesdrop correctly rejected (permission denied): %v", lastErr)
+			eavesdropSub.Unsubscribe()
+		} else {
+			eavesdropSub.Unsubscribe()
+			t.Errorf("❌ Service-b should NOT be able to subscribe to service-a's private inbox")
+		}
+	}
+
+	// Step 8: Test 3 - Service-b uses standard inbox (works)
+	t.Log("Test 3: Service-b using standard inbox pattern (_INBOX.>)")
+
+	// Set up responder on service-b
+	responderSubB, err := connB.Subscribe("test.standard-inbox-request", func(msg *natsclient.Msg) {
+		t.Logf("Service-b responder: received request, reply inbox: %s", msg.Reply)
+		msg.Respond([]byte("response from service-b"))
+	})
+	if err != nil {
+		t.Fatalf("Failed to create responder on service-b: %v", err)
+	}
+	defer responderSubB.Unsubscribe()
+
+	// Make request from service-b (using default _INBOX.> pattern)
+	responseB, err := connB.Request("test.standard-inbox-request", []byte("request from service-b"), 2*time.Second)
+	if err != nil {
+		t.Fatalf("Request failed with standard inbox: %v", err)
+	}
+
+	if string(responseB.Data) != "response from service-b" {
+		t.Errorf("Unexpected response: got %q, want %q", string(responseB.Data), "response from service-b")
+	} else {
+		t.Log("✅ Standard inbox request-reply successful")
+	}
+
+	// Step 9: Test 4 - Service-a cannot eavesdrop on service-b's private inbox
+	t.Log("Test 4: Service-a trying to eavesdrop on service-b's private inbox")
+
+	// Try to subscribe to service-b's private inbox - should FAIL
+	privateInboxSubjectB := "_INBOX_default_service-b.test456"
+	eavesdropSubA, err := connA.SubscribeSync(privateInboxSubjectB)
+	if err != nil {
+		t.Logf("Immediate subscription error (expected): %v", err)
+	} else {
+		// Subscription might succeed initially, but flush should reveal permission error
+		flushErr := connA.Flush()
+		if flushErr != nil {
+			t.Logf("✅ Eavesdrop correctly rejected on flush: %v", flushErr)
+			eavesdropSubA.Unsubscribe()
+		} else if lastErr := connA.LastError(); lastErr != nil {
+			t.Logf("✅ Eavesdrop correctly rejected (permission denied): %v", lastErr)
+			eavesdropSubA.Unsubscribe()
+		} else {
+			eavesdropSubA.Unsubscribe()
+			t.Errorf("❌ Service-a should NOT be able to subscribe to service-b's private inbox")
+		}
+	}
+
+	t.Log("E2E test passed - Private inbox pattern validated")
+	t.Log("  ✅ Service-a can use private inbox for request-reply")
+	t.Log("  ✅ Service-b cannot eavesdrop on service-a's private inbox")
+	t.Log("  ✅ Service-b can use standard inbox for request-reply")
+	t.Log("  ✅ Service-a cannot eavesdrop on service-b's private inbox")
+	t.Log("  ✅ Private inbox provides ServiceAccount isolation")
+}
+
 // Mock JWT validator for E2E testing
 type mockJWTValidator struct {
 	validateFunc func(token string) (*internalJWT.Claims, error)

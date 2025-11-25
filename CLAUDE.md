@@ -85,15 +85,27 @@ This is a Go-based NATS auth callout service that validates Kubernetes service a
   - **Compiles successfully** ✅
 
 - **End-to-end tests** (`e2e_test.go`) - Full system integration tests ✅
-  - ✅ Real k3s cluster with ServiceAccount annotations
-  - ✅ NATS server with auth callout configuration
-  - ✅ Real Kubernetes ServiceAccount token creation (TokenRequest API with "nats" audience)
-  - ✅ Complete auth callout flow validation (JWT → K8s lookup → permissions → NATS)
-  - ✅ Permission enforcement testing (allowed/denied subjects)
-  - ✅ Multiple test scenarios (valid token, wrong audience)
-  - ✅ All tests passing (execution time: ~10s)
+  - ✅ **TestE2E**: Full auth callout flow validation
+    - Real k3s cluster with ServiceAccount annotations
+    - NATS server with auth callout configuration
+    - Real Kubernetes token creation via TokenRequest API
+    - Complete auth flow: JWT → K8s lookup → permissions → NATS
+    - Permission enforcement testing (pub/sub subjects)
+    - Request-reply pattern validation
+  - ✅ **TestE2E_WrongAudience**: JWT audience validation
+    - Verifies tokens with incorrect audience are rejected
+  - ✅ **TestE2E_MaxMsgsOneResponseLimit**: Response security
+    - Validates `MaxMsgs: 1` response limitation
+    - Tests `allow_responses: true` security pattern
+  - ✅ **TestE2E_PrivateInboxPattern**: Private inbox isolation
+    - Two ServiceAccounts with private inbox permissions
+    - Service-a uses custom inbox prefix (`_INBOX_default_service-a`)
+    - Service-b cannot eavesdrop on service-a's private inbox
+    - Standard inbox still works for convenience
+    - Validates cross-ServiceAccount isolation
   - Build tag: `// +build e2e` for separation from unit tests
   - Run with: `make test-e2e` or `go test -tags=e2e ./e2e_test.go`
+  - All tests passing (execution time: ~10s per test)
 
 **Note:** Health checks are complete - simple liveness checks without upstream dependency checks (correct design per best practices)
 
@@ -222,12 +234,14 @@ The JWT validator (`internal/jwt/`) provides comprehensive token validation:
    - All unit tests passing with high coverage
 
 2. **End-to-end integration tests**
-   - Complete E2E test suite with k3s + NATS + auth callout
+   - Complete E2E test suite with k3s + NATS + auth callout (4 test scenarios)
    - Real Kubernetes token creation via TokenRequest API
    - Full auth flow validation (JWT → K8s → permissions → NATS)
-   - Permission enforcement testing
-   - Multiple test scenarios (valid token, wrong audience)
-   - All tests passing (~10s execution time)
+   - Permission enforcement testing (pub/sub subjects)
+   - JWT audience validation (wrong audience rejection)
+   - Response security (`MaxMsgs: 1` validation)
+   - Private inbox pattern isolation (cross-ServiceAccount eavesdropping prevention)
+   - All tests passing (~10s execution time per test)
 
 3. **Comprehensive documentation**
    - Complete client usage guide (Go and Java examples)

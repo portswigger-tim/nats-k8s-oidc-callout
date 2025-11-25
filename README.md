@@ -239,3 +239,36 @@ The NATS integration tests (`internal/nats/integration_test.go`) validate:
 - JWT extraction and validation flow
 - Simplified setup using `github.com/testcontainers/testcontainers-go/modules/nats`
 
+**End-to-End Tests** (requires Docker, comprehensive integration):
+```bash
+make test-e2e
+# or
+go test -tags=e2e -v -timeout 10m ./e2e_test.go
+```
+
+### E2E Test Coverage
+
+The E2E tests (`e2e_test.go`) provide comprehensive validation with real k3s cluster and NATS server:
+
+- **TestE2E**: Full auth callout flow validation
+  - Real Kubernetes JWT token creation via TokenRequest API
+  - Complete auth flow: JWT → K8s lookup → permissions → NATS
+  - Permission enforcement testing (pub/sub subjects)
+  - Request-reply pattern validation
+  - Full end-to-end integration
+
+- **TestE2E_WrongAudience**: JWT audience validation
+  - Verifies tokens with incorrect audience are rejected
+  - Tests JWT validation security controls
+
+- **TestE2E_MaxMsgsOneResponseLimit**: Response security validation
+  - Validates `MaxMsgs: 1` response limitation
+  - Ensures responders can only send one reply per request
+  - Tests `allow_responses: true` security pattern
+
+- **TestE2E_PrivateInboxPattern**: Private inbox isolation
+  - Service-a uses private inbox (`_INBOX_default_service-a`)
+  - Service-b cannot eavesdrop on service-a's private inbox
+  - Standard inbox (`_INBOX.>`) still works for convenience
+  - Validates cross-ServiceAccount isolation
+
