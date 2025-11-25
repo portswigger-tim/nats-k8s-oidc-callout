@@ -799,5 +799,29 @@ func testPrivateInboxPattern(t *testing.T, suite *E2ETestSuite) {
 	}
 	t.Log("✅ Standard inbox request-reply successful")
 
+	// Test 4: Cross-service request-reply (service-a private inbox → service-b responds)
+	t.Log("Test 4: Cross-service request-reply with private inbox")
+	responderCrossService, err := connB.Subscribe("test.cross-service-request", func(msg *natsclient.Msg) {
+		t.Logf("Service-b responder: received request from service-a, reply inbox: %s", msg.Reply)
+		// Service-b responds to service-a's private inbox via allow_responses (MaxMsgs: 1)
+		if err := msg.Respond([]byte("response from service-b to service-a")); err != nil {
+			t.Errorf("Service-b failed to respond: %v", err)
+		}
+	})
+	if err != nil {
+		t.Fatalf("Failed to create cross-service responder on service-b: %v", err)
+	}
+	defer responderCrossService.Unsubscribe()
+
+	// Service-a makes request using private inbox, service-b responds
+	respCrossService, err := connA.Request("test.cross-service-request", []byte("request from service-a to service-b"), 2*time.Second)
+	if err != nil {
+		t.Fatalf("Cross-service request failed: %v", err)
+	}
+	if string(respCrossService.Data) != "response from service-b to service-a" {
+		t.Errorf("Wrong cross-service response: got %q, want %q", string(respCrossService.Data), "response from service-b to service-a")
+	}
+	t.Log("✅ Cross-service request-reply with private inbox successful")
+
 	t.Log("✅ PrivateInboxPattern test passed")
 }
