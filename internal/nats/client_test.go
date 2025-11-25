@@ -7,6 +7,7 @@ import (
 
 	"github.com/nats-io/jwt/v2"
 	"github.com/nats-io/nkeys"
+	"go.uber.org/zap"
 
 	internalAuth "github.com/portswigger-tim/nats-k8s-oidc-callout/internal/auth"
 )
@@ -22,13 +23,14 @@ func (m *mockAuthHandler) Authorize(req *internalAuth.AuthRequest) *internalAuth
 
 // TestClient_Create tests client creation
 func TestClient_Create(t *testing.T) {
+	logger := zap.NewNop() // No-op logger for tests
 	authHandler := &mockAuthHandler{
 		authorizeFunc: func(req *internalAuth.AuthRequest) *internalAuth.AuthResponse {
 			return &internalAuth.AuthResponse{Allowed: true}
 		},
 	}
 
-	client, err := NewClient("nats://localhost:4222", authHandler)
+	client, err := NewClient("nats://localhost:4222", authHandler, logger)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -164,9 +166,13 @@ func TestExtractToken(t *testing.T) {
 		},
 	}
 
+	// Create a minimal client for testing with a no-op logger
+	logger := zap.NewNop()
+	client := &Client{logger: logger}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := extractToken(tt.request)
+			got := client.extractToken(tt.request)
 			if got != tt.wantJWT {
 				t.Errorf("extractToken() = %q, want %q", got, tt.wantJWT)
 			}
@@ -227,11 +233,12 @@ func TestClient_AuthorizerFunction(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create client
+			logger := zap.NewNop()
 			authHandler := &mockAuthHandler{
 				authorizeFunc: tt.authHandler,
 			}
 
-			client, err := NewClient("nats://localhost:4222", authHandler)
+			client, err := NewClient("nats://localhost:4222", authHandler, logger)
 			if err != nil {
 				t.Fatalf("Failed to create client: %v", err)
 			}
@@ -248,7 +255,7 @@ func TestClient_AuthorizerFunction(t *testing.T) {
 			}
 
 			// Call the internal authorizer logic (simulate)
-			token := extractToken(req)
+			token := client.extractToken(req)
 
 			if token == "" {
 				// Should be rejected
@@ -330,7 +337,8 @@ func TestClient_NewClient(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client, err := NewClient(tt.url, authHandler)
+			logger := zap.NewNop()
+			client, err := NewClient(tt.url, authHandler, logger)
 
 			if tt.wantErr && err == nil {
 				t.Error("Expected error but got none")

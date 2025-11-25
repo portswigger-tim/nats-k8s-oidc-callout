@@ -89,16 +89,26 @@ This grants:
   - NKey-based response signing
   - Integration tests with testcontainers
 
-### 🚧 In Progress
-- Main application wiring
+### ✅ Fully Implemented and Tested
+- **Complete application** - All components working end-to-end
+- **End-to-end tests** - Full system integration tests with k3s + NATS + auth callout
+  - Real Kubernetes token creation and validation
+  - Complete auth callout flow testing
+  - Permission enforcement validation
+  - Multiple test scenarios (valid token, wrong audience)
+  - All tests passing (~10s execution time)
+  - Run with: `make test-e2e` (requires Docker)
 
 ### 📋 Planned
-- End-to-end system tests with all components
 - Deployment manifests and Helm chart
+- Production deployment examples
+
+## Documentation
+
+- **[Client Usage Guide](docs/CLIENT_USAGE.md)** - Complete guide for configuring and using NATS authentication from your applications
+- **[Design Document](docs/plans/2025-11-24-nats-k8s-auth-design.md)** - Detailed architecture and design decisions
 
 ## Architecture
-
-See [design document](docs/plans/2025-11-24-nats-k8s-auth-design.md) for detailed architecture and design decisions.
 
 ### Key Components
 

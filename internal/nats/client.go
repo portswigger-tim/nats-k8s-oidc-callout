@@ -9,6 +9,7 @@ import (
 	natsclient "github.com/nats-io/nats.go"
 	"github.com/nats-io/nkeys"
 	"github.com/synadia-io/callout.go"
+	"go.uber.org/zap"
 
 	"github.com/portswigger-tim/nats-k8s-oidc-callout/internal/auth"
 )
@@ -30,10 +31,11 @@ type Client struct {
 	conn        *natsclient.Conn
 	service     *callout.AuthorizationService
 	signingKey  nkeys.KeyPair
+	logger      *zap.Logger
 }
 
 // NewClient creates a new NATS auth callout client
-func NewClient(url string, authHandler AuthHandler) (*Client, error) {
+func NewClient(url string, authHandler AuthHandler, logger *zap.Logger) (*Client, error) {
 	// Generate signing key for responses
 	signingKey, err := nkeys.CreateAccount()
 	if err != nil {
@@ -44,6 +46,7 @@ func NewClient(url string, authHandler AuthHandler) (*Client, error) {
 		url:         url,
 		authHandler: authHandler,
 		signingKey:  signingKey,
+		logger:      logger,
 	}, nil
 }
 
@@ -69,11 +72,13 @@ func (c *Client) Start(ctx context.Context) error {
 		// Extract JWT token from request
 		// The token is provided by the client in the connection options
 		// For now, we'll extract it from the ConnectOptions if available
-		token := extractToken(req)
+		token := c.extractToken(req)
 
 		if token == "" {
 			// Reject requests without a token by not returning a JWT
 			// This causes the connection to timeout
+			c.logger.Debug("auth request rejected: no token provided",
+				zap.String("user_nkey", req.UserNkey))
 			return "", fmt.Errorf("no token provided")
 		}
 
@@ -83,19 +88,49 @@ func (c *Client) Start(ctx context.Context) error {
 		}
 		authResp := c.authHandler.Authorize(authReq)
 
+		c.logger.Debug("auth handler response",
+			zap.Bool("allowed", authResp.Allowed),
+			zap.Strings("publish_permissions", authResp.PublishPermissions),
+			zap.Strings("subscribe_permissions", authResp.SubscribePermissions))
+
 		// If denied, reject by not returning a JWT
 		if !authResp.Allowed {
+			c.logger.Debug("auth request denied",
+				zap.String("user_nkey", req.UserNkey))
 			return "", fmt.Errorf("authorization failed")
 		}
 
 		// Build NATS user claims
 		uc := jwt.NewUserClaims(req.UserNkey)
+
+		// Set the account this user belongs to
+		// Use "$G" for the global account (NATS special value)
+		uc.Audience = "$G"
+
 		uc.Pub.Allow.Add(authResp.PublishPermissions...)
 		uc.Sub.Allow.Add(authResp.SubscribePermissions...)
 		uc.Expires = time.Now().Add(DefaultTokenExpiry).Unix()
 
+		c.logger.Debug("built user claims",
+			zap.String("subject", uc.Subject),
+			zap.String("audience", uc.Audience),
+			zap.Any("pub_allow", uc.Pub.Allow),
+			zap.Any("sub_allow", uc.Sub.Allow),
+			zap.Int64("expires", uc.Expires))
+
 		// Encode and return JWT
-		return uc.Encode(c.signingKey)
+		encodedJWT, err := uc.Encode(c.signingKey)
+		if err != nil {
+			c.logger.Error("failed to encode auth response JWT",
+				zap.Error(err),
+				zap.String("user_nkey", req.UserNkey))
+			return "", err
+		}
+
+		c.logger.Debug("encoded auth response JWT",
+			zap.Int("jwt_length", len(encodedJWT)))
+
+		return encodedJWT, nil
 	}
 
 	// Create auth callout service
@@ -128,16 +163,24 @@ func (c *Client) Shutdown(ctx context.Context) error {
 
 // extractToken extracts the JWT token from the authorization request
 // The token should be provided by the client in the connection options
-func extractToken(req *jwt.AuthorizationRequest) string {
+func (c *Client) extractToken(req *jwt.AuthorizationRequest) string {
+	c.logger.Debug("extracting token from auth request",
+		zap.String("jwt_field", req.ConnectOptions.JWT),
+		zap.String("token_field", req.ConnectOptions.Token),
+		zap.String("username", req.ConnectOptions.Username))
+
 	// Check for JWT in connect options (standard field)
 	if req.ConnectOptions.JWT != "" {
+		c.logger.Debug("token found in JWT field")
 		return req.ConnectOptions.JWT
 	}
 
 	// Alternative: check for auth_token field
 	if req.ConnectOptions.Token != "" {
+		c.logger.Debug("token found in Token field")
 		return req.ConnectOptions.Token
 	}
 
+	c.logger.Debug("no token found in auth request")
 	return ""
 }

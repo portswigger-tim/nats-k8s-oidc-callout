@@ -12,6 +12,7 @@ import (
 	natsclient "github.com/nats-io/nats.go"
 	"github.com/nats-io/nkeys"
 	natscontainer "github.com/testcontainers/testcontainers-go/modules/nats"
+	"go.uber.org/zap"
 
 	internalAuth "github.com/portswigger-tim/nats-k8s-oidc-callout/internal/auth"
 )
@@ -83,8 +84,11 @@ authorization {
 		},
 	}
 
+	// Create logger for integration test
+	logger := zap.NewNop()
+
 	// Create and start our auth callout client with credentials
-	client, err := NewClient(natsURL, authHandler)
+	client, err := NewClient(natsURL, authHandler, logger)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}

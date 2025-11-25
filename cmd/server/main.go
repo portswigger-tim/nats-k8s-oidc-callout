@@ -47,12 +47,12 @@ func run() error {
 		zap.String("port", fmt.Sprintf("%d", cfg.Port)),
 		zap.String("log_level", cfg.LogLevel),
 		zap.String("nats_url", cfg.NatsURL),
-		zap.String("jwks_url", cfg.JWKSURL),
+		zap.String("jwks_url", cfg.JWKSUrl),
 	)
 
 	// Initialize JWT validator
-	logger.Info("initializing JWT validator", zap.String("jwks_url", cfg.JWKSURL))
-	jwtValidator, err := jwt.NewValidatorFromURL(cfg.JWKSURL)
+	logger.Info("initializing JWT validator", zap.String("jwks_url", cfg.JWKSUrl))
+	jwtValidator, err := jwt.NewValidatorFromURL(cfg.JWKSUrl, cfg.JWTIssuer, cfg.JWTAudience)
 	if err != nil {
 		return fmt.Errorf("failed to create JWT validator: %w", err)
 	}
@@ -91,7 +91,7 @@ func run() error {
 
 	// Initialize NATS client
 	logger.Info("initializing NATS client", zap.String("url", cfg.NatsURL))
-	natsClient, err := nats.NewClient(cfg.NatsURL, authHandler)
+	natsClient, err := nats.NewClient(cfg.NatsURL, authHandler, logger)
 	if err != nil {
 		return fmt.Errorf("failed to create NATS client: %w", err)
 	}

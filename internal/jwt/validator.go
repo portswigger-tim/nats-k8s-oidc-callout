@@ -94,6 +94,12 @@ func (v *Validator) SetTimeFunc(fn func() time.Time) {
 	v.timeFunc = fn
 }
 
+// Validate validates a JWT token and returns the extracted claims.
+// This is an alias for ValidateToken to match the auth.JWTValidator interface.
+func (v *Validator) Validate(token string) (*Claims, error) {
+	return v.ValidateToken(token)
+}
+
 // ValidateToken validates a JWT token and returns the extracted claims.
 func (v *Validator) ValidateToken(tokenString string) (*Claims, error) {
 	// Parse and validate the token with custom time function

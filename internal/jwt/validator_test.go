@@ -64,6 +64,14 @@ func TestValidateToken_ValidToken(t *testing.T) {
 		t.Fatalf("failed to create validator: %v", err)
 	}
 
+	// Mock time to be within the token's validity window
+	// Token: nbf=1763969878 (2025-11-24), exp=1764056278 (2025-11-25)
+	// Use midpoint of validity window
+	validTime := time.Unix(1764000000, 0) // 2025-11-24 16:00:00 (within validity)
+	validator.SetTimeFunc(func() time.Time {
+		return validTime
+	})
+
 	claims, err := validator.ValidateToken(tokenString)
 	if err != nil {
 		t.Fatalf("expected valid token, got error: %v", err)
@@ -103,9 +111,10 @@ func TestValidateToken_ExpiredToken(t *testing.T) {
 		t.Fatalf("failed to create validator: %v", err)
 	}
 
-	// Mock time to be after the token expires (token expires at 1764056278 = 2034-11-24)
-	// Set time to 2035-01-01
-	futureTime := time.Unix(1767225600, 0) // 2035-01-01
+	// Mock time to be after the token expires
+	// Token: nbf=1763969878 (2025-11-24), exp=1764056278 (2025-11-25)
+	// Set time to 2026-01-01 (well after expiration)
+	futureTime := time.Unix(1767225600, 0) // 2026-01-01
 	validator.SetTimeFunc(func() time.Time {
 		return futureTime
 	})
@@ -158,9 +167,54 @@ func TestValidateToken_WrongIssuer(t *testing.T) {
 		t.Fatalf("failed to create validator: %v", err)
 	}
 
+	// Mock time to be within validity window so we test issuer validation, not expiration
+	// Token: nbf=1763969878 (2025-11-24), exp=1764056278 (2025-11-25)
+	validTime := time.Unix(1764000000, 0) // 2025-11-24 16:00:00 (within validity)
+	validator.SetTimeFunc(func() time.Time {
+		return validTime
+	})
+
 	_, err = validator.ValidateToken(string(tokenBytes))
 	if err == nil {
 		t.Fatal("expected error for wrong issuer, got nil")
+	}
+
+	if !IsClaimsError(err) {
+		t.Errorf("expected claims validation error, got %v", err)
+	}
+}
+
+func TestValidateToken_WrongAudience(t *testing.T) {
+	// Test for audience validation
+	jwksPath := filepath.Join("..", "..", "testdata", "jwks.json")
+	tokenPath := filepath.Join("..", "..", "testdata", "token.jwt")
+
+	tokenBytes, err := os.ReadFile(tokenPath)
+	if err != nil {
+		t.Fatalf("failed to read test token: %v", err)
+	}
+
+	// Create validator with wrong audience
+	// Token has audience "sts.amazonaws.com"
+	validator, err := NewValidatorFromFile(
+		jwksPath,
+		"https://oidc.eks.eu-west-1.amazonaws.com/id/B88E7287E54DB073AC9CDC2FD1BE0969",
+		"wrong-audience", // Wrong audience
+	)
+	if err != nil {
+		t.Fatalf("failed to create validator: %v", err)
+	}
+
+	// Mock time to be within validity window so we test audience validation, not expiration
+	// Token: nbf=1763969878 (2025-11-24), exp=1764056278 (2025-11-25)
+	validTime := time.Unix(1764000000, 0) // 2025-11-24 16:00:00 (within validity)
+	validator.SetTimeFunc(func() time.Time {
+		return validTime
+	})
+
+	_, err = validator.ValidateToken(string(tokenBytes))
+	if err == nil {
+		t.Fatal("expected error for wrong audience, got nil")
 	}
 
 	if !IsClaimsError(err) {
