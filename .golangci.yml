@@ -17,8 +17,6 @@ linters:
     - unused        # Check for unused code
 
     # Code quality
-    - gofmt         # Checks whether code was gofmt-ed
-    - goimports     # Checks import statements are formatted according to goimport
     - misspell      # Finds commonly misspelled English words
     - revive        # Fast, configurable, extensible, flexible linter
     - unconvert     # Remove unnecessary type conversions
@@ -99,7 +97,7 @@ linters:
     staticcheck:
       checks:
         - all
-        - '-ST1003'  # Should not use underscores in Go names
+        - '-ST1003'  # Should not use underscores in Go names (allow for test names)
 
   exclusions:
     rules:
@@ -129,6 +127,15 @@ linters:
       - path: .*_generated\.go
         linters:
           - all
+
+formatters:
+  enable:
+    - gofmt         # Standard Go formatter
+    - goimports     # Organizes imports
+
+  settings:
+    gofmt:
+      simplify: true
 
 issues:
   max-issues-per-linter: 0
