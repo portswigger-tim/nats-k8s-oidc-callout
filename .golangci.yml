@@ -13,7 +13,7 @@ linters:
     - gosimple      # Simplify code
     - govet         # Examine Go source code and report suspicious constructs
     - ineffassign   # Detect ineffectual assignments
-    - staticcheck   # Advanced Go linter
+    - staticcheck   # Advanced Go linter (includes stylecheck in v2)
     - unused        # Check for unused code
 
     # Code quality
@@ -37,7 +37,6 @@ linters:
 
     # Style
     - whitespace    # Detection of leading and trailing whitespace
-    - stylecheck    # Stylecheck is a replacement for golint
 
   settings:
     errcheck:
@@ -97,8 +96,10 @@ linters:
         global:
           audit: true
 
-    stylecheck:
-      checks: ["all", "-ST1003"] # ST1003: should not use underscores in Go names
+    staticcheck:
+      checks:
+        - all
+        - '-ST1003'  # Should not use underscores in Go names
 
   exclusions:
     rules:
@@ -137,6 +138,7 @@ output:
   formats:
     text:
       path: stdout
-      print-linter-name: true
-      print-issued-lines: true
-      sort-results: true
+  sort-order:
+    - linter
+    - severity
+    - file
