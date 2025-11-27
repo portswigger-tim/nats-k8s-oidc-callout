@@ -208,25 +208,79 @@ func (v *Validator) validateStandardClaims(claims jwt.MapClaims) error {
 	return nil
 }
 
-// extractK8sClaims extracts Kubernetes-specific claims from the token.
-func (v *Validator) extractK8sClaims(claims jwt.MapClaims) (*Claims, error) {
-	// Extract kubernetes.io claim
+// extractK8sMap extracts and converts the kubernetes.io claim to a map.
+func extractK8sMap(claims jwt.MapClaims) (map[string]interface{}, error) {
 	k8sData, ok := claims["kubernetes.io"]
 	if !ok {
 		return nil, fmt.Errorf("%w: kubernetes.io claim missing", ErrMissingK8sClaims)
 	}
 
-	// Convert to map
+	// Try direct type assertion first
 	k8sMap, ok := k8sData.(map[string]interface{})
+	if ok {
+		return k8sMap, nil
+	}
+
+	// Fallback: try JSON marshaling/unmarshaling
+	jsonData, err := json.Marshal(k8sData)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid kubernetes.io format", ErrMissingK8sClaims)
+	}
+	if err := json.Unmarshal(jsonData, &k8sMap); err != nil {
+		return nil, fmt.Errorf("%w: invalid kubernetes.io format", ErrMissingK8sClaims)
+	}
+	return k8sMap, nil
+}
+
+// extractServiceAccountName extracts the service account name from kubernetes.io map.
+func extractServiceAccountName(k8sMap map[string]interface{}) (string, error) {
+	saData, ok := k8sMap["serviceaccount"]
 	if !ok {
-		// Try JSON marshaling/unmarshaling as fallback
-		jsonData, err := json.Marshal(k8sData)
-		if err != nil {
-			return nil, fmt.Errorf("%w: invalid kubernetes.io format", ErrMissingK8sClaims)
+		return "", fmt.Errorf("%w: serviceaccount claim missing", ErrMissingK8sClaims)
+	}
+
+	saMap, ok := saData.(map[string]interface{})
+	if !ok {
+		return "", fmt.Errorf("%w: invalid serviceaccount format", ErrMissingK8sClaims)
+	}
+
+	saName, ok := saMap["name"].(string)
+	if !ok || saName == "" {
+		return "", fmt.Errorf("%w: serviceaccount name missing or empty", ErrMissingK8sClaims)
+	}
+
+	return saName, nil
+}
+
+// extractAudienceList extracts the audience claim and converts it to a string slice.
+func extractAudienceList(claims jwt.MapClaims) []string {
+	aud, ok := claims["aud"]
+	if !ok {
+		return nil
+	}
+
+	switch a := aud.(type) {
+	case string:
+		return []string{a}
+	case []interface{}:
+		var audiences []string
+		for _, item := range a {
+			if str, ok := item.(string); ok {
+				audiences = append(audiences, str)
+			}
 		}
-		if err := json.Unmarshal(jsonData, &k8sMap); err != nil {
-			return nil, fmt.Errorf("%w: invalid kubernetes.io format", ErrMissingK8sClaims)
-		}
+		return audiences
+	default:
+		return nil
+	}
+}
+
+// extractK8sClaims extracts Kubernetes-specific claims from the token.
+func (v *Validator) extractK8sClaims(claims jwt.MapClaims) (*Claims, error) {
+	// Extract kubernetes.io map
+	k8sMap, err := extractK8sMap(claims)
+	if err != nil {
+		return nil, err
 	}
 
 	// Extract namespace
@@ -235,44 +289,24 @@ func (v *Validator) extractK8sClaims(claims jwt.MapClaims) (*Claims, error) {
 		return nil, fmt.Errorf("%w: namespace claim missing or empty", ErrMissingK8sClaims)
 	}
 
-	// Extract service account
-	saData, ok := k8sMap["serviceaccount"]
+	// Extract service account name
+	saName, err := extractServiceAccountName(k8sMap)
+	if err != nil {
+		return nil, err
+	}
+
+	// Extract issuer (optional field)
+	issuer, ok := claims["iss"].(string)
 	if !ok {
-		return nil, fmt.Errorf("%w: serviceaccount claim missing", ErrMissingK8sClaims)
+		issuer = "" // Default to empty string if not present
 	}
-
-	saMap, ok := saData.(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("%w: invalid serviceaccount format", ErrMissingK8sClaims)
-	}
-
-	saName, ok := saMap["name"].(string)
-	if !ok || saName == "" {
-		return nil, fmt.Errorf("%w: serviceaccount name missing or empty", ErrMissingK8sClaims)
-	}
-
-	// Extract issuer (optional field, may not be present in all tokens)
-	issuer, _ := claims["iss"].(string) //nolint:errcheck // issuer is optional
 
 	// Build Claims struct
 	result := &Claims{
 		Namespace:      namespace,
 		ServiceAccount: saName,
 		Issuer:         issuer,
-	}
-
-	// Extract audience
-	if aud, ok := claims["aud"]; ok {
-		switch a := aud.(type) {
-		case string:
-			result.Audience = []string{a}
-		case []interface{}:
-			for _, item := range a {
-				if str, ok := item.(string); ok {
-					result.Audience = append(result.Audience, str)
-				}
-			}
-		}
+		Audience:       extractAudienceList(claims),
 	}
 
 	// Extract time claims

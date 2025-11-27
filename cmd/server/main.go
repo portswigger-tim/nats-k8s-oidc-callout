@@ -44,8 +44,10 @@ func run() error {
 		return fmt.Errorf("failed to initialize logger: %w", err)
 	}
 	defer func() {
-		// Sync may fail on stdout/stderr, which is expected
-		_ = logger.Sync() //nolint:errcheck,gosec // sync errors on stdout/stderr are expected
+		if err := logger.Sync(); err != nil {
+			// Sync may fail on stdout/stderr, which is expected behavior
+			_ = err
+		}
 	}()
 
 	logger.Info("starting nats-k8s-oidc-callout",

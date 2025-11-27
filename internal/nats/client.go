@@ -194,8 +194,10 @@ func LoadSigningKeyFromCredsFile(path string) (nkeys.KeyPair, error) {
 		return nil, fmt.Errorf("failed to open credentials file: %w", err)
 	}
 	defer func() {
-		// File close error is not critical for reading operations
-		_ = file.Close() //nolint:errcheck,gosec // close errors on read operations are not critical
+		if err := file.Close(); err != nil {
+			// File close errors are not critical for read operations
+			_ = err
+		}
 	}()
 
 	var seed string
