@@ -814,6 +814,11 @@ func testPrivateInboxPattern(t *testing.T, suite *E2ETestSuite) {
 	}
 	defer responderCrossService.Unsubscribe()
 
+	// Flush to ensure subscription is fully registered before cross-service request
+	if err := connB.Flush(); err != nil {
+		t.Fatalf("Failed to flush subscription: %v", err)
+	}
+
 	// Service-a makes request using private inbox, service-b responds
 	respCrossService, err := connA.Request("test.cross-service-request", []byte("request from service-a to service-b"), 2*time.Second)
 	if err != nil {
