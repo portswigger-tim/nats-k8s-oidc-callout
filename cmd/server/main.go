@@ -31,6 +31,138 @@ func main() {
 	}
 }
 
+// initJWTValidator initializes the JWT validator from either file or URL.
+func initJWTValidator(cfg *config.Config, logger *zap.Logger) (*jwt.Validator, error) {
+	if cfg.JWKSPath != "" {
+		logger.Info("initializing JWT validator from file", zap.String("jwks_path", cfg.JWKSPath))
+		validator, err := jwt.NewValidatorFromFile(cfg.JWKSPath, cfg.JWTIssuer, cfg.JWTAudience)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create JWT validator from file: %w", err)
+		}
+		return validator, nil
+	}
+
+	logger.Info("initializing JWT validator from URL", zap.String("jwks_url", cfg.JWKSUrl))
+	validator, err := jwt.NewValidatorFromURL(cfg.JWKSUrl, cfg.JWTIssuer, cfg.JWTAudience)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create JWT validator from URL: %w", err)
+	}
+	return validator, nil
+}
+
+// initK8sClient initializes the Kubernetes client with config, clientset, and informer factory.
+func initK8sClient(cfg *config.Config, logger *zap.Logger) (*k8s.Client, informers.SharedInformerFactory, chan struct{}, error) {
+	logger.Info("initializing Kubernetes client")
+
+	// Get Kubernetes config
+	var k8sConfig *rest.Config
+	var err error
+	if cfg.K8sInCluster {
+		logger.Info("using in-cluster Kubernetes config")
+		k8sConfig, err = rest.InClusterConfig()
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to get in-cluster config: %w", err)
+		}
+	} else {
+		logger.Info("using out-of-cluster Kubernetes config from KUBECONFIG")
+		loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+		configOverrides := &clientcmd.ConfigOverrides{}
+		kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
+		k8sConfig, err = kubeConfig.ClientConfig()
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to load kubeconfig: %w", err)
+		}
+	}
+
+	// Create clientset
+	clientset, err := kubernetes.NewForConfig(k8sConfig)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to create Kubernetes clientset: %w", err)
+	}
+
+	// Create informer factory
+	informerFactory := informers.NewSharedInformerFactory(clientset, 0)
+
+	// Create K8s client with ServiceAccount cache
+	k8sClient := k8s.NewClient(informerFactory, logger)
+
+	// Create stop channel for lifecycle management
+	stopCh := make(chan struct{})
+
+	return k8sClient, informerFactory, stopCh, nil
+}
+
+// startK8sInformers starts the informer factory and waits for caches to sync.
+func startK8sInformers(factory informers.SharedInformerFactory, stopCh chan struct{}, logger *zap.Logger) {
+	factory.Start(stopCh)
+	logger.Info("waiting for Kubernetes caches to sync")
+	factory.WaitForCacheSync(stopCh)
+	logger.Info("Kubernetes caches synced")
+}
+
+// initNATSClient initializes the NATS client with signing key configuration.
+func initNATSClient(cfg *config.Config, authHandler *auth.Handler, logger *zap.Logger) (*nats.Client, error) {
+	// Create NATS client
+	logger.Info("initializing NATS client", zap.String("url", cfg.NatsURL))
+	natsClient, err := nats.NewClient(cfg.NatsURL, authHandler, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create NATS client: %w", err)
+	}
+
+	// Load signing key from credentials file
+	logger.Info("loading signing key from credentials", zap.String("creds_file", cfg.NatsCredsFile))
+	signingKey, err := nats.LoadSigningKeyFromCredsFile(cfg.NatsCredsFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load signing key from credentials: %w", err)
+	}
+	natsClient.SetSigningKey(signingKey)
+
+	return natsClient, nil
+}
+
+// waitForShutdown starts the HTTP server and waits for shutdown signal or server error.
+// Coordinates graceful shutdown of all services with timeout.
+func waitForShutdown(httpSrv *httpserver.Server, natsClient *nats.Client, logger *zap.Logger) error {
+	// Start HTTP server in a goroutine
+	serverErrors := make(chan error, 1)
+	go func() {
+		serverErrors <- httpSrv.Start()
+	}()
+
+	logger.Info("all services started successfully")
+
+	// Wait for interrupt signal or server error
+	shutdownCh := make(chan os.Signal, 1)
+	signal.Notify(shutdownCh, os.Interrupt, syscall.SIGTERM)
+
+	select {
+	case err := <-serverErrors:
+		return fmt.Errorf("server error: %w", err)
+	case sig := <-shutdownCh:
+		logger.Info("shutdown signal received", zap.String("signal", sig.String()))
+
+		// Graceful shutdown with timeout
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		// Shutdown in reverse order (NATS first, then HTTP)
+		logger.Info("shutting down NATS client")
+		if err := natsClient.Shutdown(ctx); err != nil {
+			logger.Error("failed to shutdown NATS client", zap.Error(err))
+		}
+
+		logger.Info("shutting down HTTP server")
+		if err := httpSrv.Shutdown(ctx); err != nil {
+			logger.Error("failed to shutdown HTTP server gracefully", zap.Error(err))
+			return err
+		}
+
+		logger.Info("shutdown complete")
+	}
+
+	return nil
+}
+
 func run() error {
 	// Load configuration
 	cfg, err := config.Load()
@@ -58,137 +190,43 @@ func run() error {
 	)
 
 	// Initialize JWT validator
-	var jwtValidator *jwt.Validator
-	if cfg.JWKSPath != "" {
-		logger.Info("initializing JWT validator from file", zap.String("jwks_path", cfg.JWKSPath))
-		jwtValidator, err = jwt.NewValidatorFromFile(cfg.JWKSPath, cfg.JWTIssuer, cfg.JWTAudience)
-		if err != nil {
-			return fmt.Errorf("failed to create JWT validator from file: %w", err)
-		}
-	} else {
-		logger.Info("initializing JWT validator from URL", zap.String("jwks_url", cfg.JWKSUrl))
-		jwtValidator, err = jwt.NewValidatorFromURL(cfg.JWKSUrl, cfg.JWTIssuer, cfg.JWTAudience)
-		if err != nil {
-			return fmt.Errorf("failed to create JWT validator from URL: %w", err)
-		}
+	jwtValidator, err := initJWTValidator(cfg, logger)
+	if err != nil {
+		return err
 	}
 
 	// Initialize Kubernetes client
-	logger.Info("initializing Kubernetes client")
-	var k8sConfig *rest.Config
-	if cfg.K8sInCluster {
-		logger.Info("using in-cluster Kubernetes config")
-		k8sConfig, err = rest.InClusterConfig()
-		if err != nil {
-			return fmt.Errorf("failed to get in-cluster config: %w", err)
-		}
-	} else {
-		logger.Info("using out-of-cluster Kubernetes config from KUBECONFIG")
-		// Use KUBECONFIG environment variable or default kubeconfig location
-		loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
-		configOverrides := &clientcmd.ConfigOverrides{}
-		kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
-		k8sConfig, err = kubeConfig.ClientConfig()
-		if err != nil {
-			return fmt.Errorf("failed to load kubeconfig: %w", err)
-		}
-	}
-
-	clientset, err := kubernetes.NewForConfig(k8sConfig)
+	k8sClient, informerFactory, stopCh, err := initK8sClient(cfg, logger)
 	if err != nil {
-		return fmt.Errorf("failed to create Kubernetes clientset: %w", err)
+		return err
 	}
-
-	// Create informer factory
-	informerFactory := informers.NewSharedInformerFactory(clientset, 0)
-
-	// Create K8s client with ServiceAccount cache
-	k8sClient := k8s.NewClient(informerFactory, logger)
-
-	// Start informers
-	stopCh := make(chan struct{})
 	defer close(stopCh)
 
-	informerFactory.Start(stopCh)
-
-	// Wait for caches to sync
-	logger.Info("waiting for Kubernetes caches to sync")
-	informerFactory.WaitForCacheSync(stopCh)
-	logger.Info("Kubernetes caches synced")
+	// Start informers and wait for cache sync
+	startK8sInformers(informerFactory, stopCh, logger)
 
 	// Initialize authorization handler
 	authHandler := auth.NewHandler(jwtValidator, k8sClient)
 
-	// Initialize NATS client
-	logger.Info("initializing NATS client", zap.String("url", cfg.NatsURL))
-	natsClient, err := nats.NewClient(cfg.NatsURL, authHandler, logger)
+	// Initialize NATS client with signing key
+	natsClient, err := initNATSClient(cfg, authHandler, logger)
 	if err != nil {
-		return fmt.Errorf("failed to create NATS client: %w", err)
+		return err
 	}
-
-	// Load signing key from credentials file
-	// The credentials file contains the account seed used to sign authorization responses
-	logger.Info("loading signing key from credentials", zap.String("creds_file", cfg.NatsCredsFile))
-	signingKey, err := nats.LoadSigningKeyFromCredsFile(cfg.NatsCredsFile)
-	if err != nil {
-		return fmt.Errorf("failed to load signing key from credentials: %w", err)
-	}
-	natsClient.SetSigningKey(signingKey)
 
 	// Start NATS auth callout service
 	ctx := context.Background()
 	if err := natsClient.Start(ctx); err != nil {
 		return fmt.Errorf("failed to start NATS client: %w", err)
 	}
-	defer func() {
-		if err := natsClient.Shutdown(ctx); err != nil {
-			logger.Error("failed to shutdown NATS client", zap.Error(err))
-		}
-	}()
 
 	logger.Info("NATS auth callout service started successfully")
 
 	// Initialize HTTP server
 	httpSrv := httpserver.New(cfg.Port, logger)
 
-	// Start HTTP server in a goroutine
-	serverErrors := make(chan error, 1)
-	go func() {
-		serverErrors <- httpSrv.Start()
-	}()
-
-	logger.Info("all services started successfully")
-
-	// Wait for interrupt signal or server error
-	shutdown := make(chan os.Signal, 1)
-	signal.Notify(shutdown, os.Interrupt, syscall.SIGTERM)
-
-	select {
-	case err := <-serverErrors:
-		return fmt.Errorf("server error: %w", err)
-	case sig := <-shutdown:
-		logger.Info("shutdown signal received", zap.String("signal", sig.String()))
-
-		// Graceful shutdown with timeout
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-
-		// Shutdown in reverse order
-		logger.Info("shutting down NATS client")
-		if err := natsClient.Shutdown(ctx); err != nil {
-			logger.Error("failed to shutdown NATS client", zap.Error(err))
-		}
-
-		logger.Info("shutting down HTTP server")
-		if err := httpSrv.Shutdown(ctx); err != nil {
-			logger.Error("failed to shutdown HTTP server gracefully", zap.Error(err))
-			return err
-		}
-
-		logger.Info("shutdown complete")
-	}
-
-	return nil
+	// Wait for shutdown signal and coordinate graceful shutdown
+	return waitForShutdown(httpSrv, natsClient, logger)
 }
 
 // initLogger creates a zap logger based on the specified log level.

@@ -50,10 +50,10 @@ linters:
         - fieldalignment # Too noisy for structs
 
     gocyclo:
-      min-complexity: 20
+      min-complexity: 10
 
     gocognit:
-      min-complexity: 25
+      min-complexity: 10
 
     gocritic:
       enabled-tags:
