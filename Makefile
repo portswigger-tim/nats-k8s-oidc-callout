@@ -79,11 +79,11 @@ build-arm64:
 # Docker targets
 # ============================================================
 
-# Build Docker image for local testing
+# Build Docker image for local testing (amd64 only for --load compatibility)
 docker-build: build-all
-	@echo "Building Docker image..."
+	@echo "Building Docker image for linux/amd64..."
 	docker buildx build \
-		--platform linux/amd64,linux/arm64 \
+		--platform linux/amd64 \
 		-t $(BINARY_NAME):$(VERSION) \
 		-t $(BINARY_NAME):latest \
 		--load \
