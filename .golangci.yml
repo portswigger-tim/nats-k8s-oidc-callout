@@ -10,10 +10,9 @@ linters:
   enable:
     # Default linters
     - errcheck      # Check for unchecked errors
-    - gosimple      # Simplify code
     - govet         # Examine Go source code and report suspicious constructs
     - ineffassign   # Detect ineffectual assignments
-    - staticcheck   # Advanced Go linter (includes stylecheck in v2)
+    - staticcheck   # Advanced Go linter (includes stylecheck + gosimple in v2)
     - unused        # Check for unused code
 
     # Code quality
