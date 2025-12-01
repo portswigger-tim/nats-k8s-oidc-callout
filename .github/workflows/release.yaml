@@ -189,11 +189,11 @@ jobs:
           GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | grep sec | awk '{print $2}' | cut -d'/' -f2 | head -n1)
           echo "key_id=${GPG_KEY_ID}" >> $GITHUB_OUTPUT
 
-          # Export public key with versioned filename
-          gpg --armor --export ${GPG_KEY_ID} > nats-k8s-oidc-callout-${CHART_VERSION}.pub.key
+          # Export public key with simplified versioned filename
+          gpg --armor --export ${GPG_KEY_ID} > helm-signing-key.${CHART_VERSION}.pub
 
           echo "Generated GPG key: ${GPG_KEY_ID}"
-          echo "Public key: nats-k8s-oidc-callout-${CHART_VERSION}.pub.key"
+          echo "Public key: helm-signing-key.${CHART_VERSION}.pub"
 
       - name: Update Helm chart version
         run: |
@@ -357,10 +357,10 @@ jobs:
           # Download chart, provenance, and public key
           wget https://github.com/${{ github.repository }}/releases/download/${{ steps.calver.outputs.tag }}/nats-k8s-oidc-callout-${CHART_VERSION}.tgz
           wget https://github.com/${{ github.repository }}/releases/download/${{ steps.calver.outputs.tag }}/nats-k8s-oidc-callout-${CHART_VERSION}.tgz.prov
-          wget https://github.com/${{ github.repository }}/releases/download/${{ steps.calver.outputs.tag }}/nats-k8s-oidc-callout-${CHART_VERSION}.pub.key
+          wget https://github.com/${{ github.repository }}/releases/download/${{ steps.calver.outputs.tag }}/helm-signing-key.${CHART_VERSION}.pub
 
           # Import the public key
-          gpg --import nats-k8s-oidc-callout-${CHART_VERSION}.pub.key
+          gpg --import helm-signing-key.${CHART_VERSION}.pub
 
           # Verify with Helm
           helm verify nats-k8s-oidc-callout-${CHART_VERSION}.tgz
@@ -397,7 +397,7 @@ jobs:
             nats-k8s-oidc-callout-*.tgz
             nats-k8s-oidc-callout-*.tgz.prov
             nats-k8s-oidc-callout-*.tgz.bundle
-            nats-k8s-oidc-callout-*.pub.key
+            helm-signing-key.*.pub
           draft: false
           prerelease: false
           make_latest: true

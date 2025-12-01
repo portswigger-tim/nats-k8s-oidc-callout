@@ -88,10 +88,10 @@ Traditional Helm provenance verification using GPG signatures. Each release incl
 # Download chart, provenance, and public key from GitHub releases
 wget https://github.com/portswigger-tim/nats-k8s-oidc-callout/releases/download/<VERSION>/nats-k8s-oidc-callout-<VERSION>.tgz
 wget https://github.com/portswigger-tim/nats-k8s-oidc-callout/releases/download/<VERSION>/nats-k8s-oidc-callout-<VERSION>.tgz.prov
-wget https://github.com/portswigger-tim/nats-k8s-oidc-callout/releases/download/<VERSION>/nats-k8s-oidc-callout-<VERSION>.pub.key
+wget https://github.com/portswigger-tim/nats-k8s-oidc-callout/releases/download/<VERSION>/helm-signing-key.<VERSION>.pub
 
 # Import the public key for this release
-gpg --import nats-k8s-oidc-callout-<VERSION>.pub.key
+gpg --import helm-signing-key.<VERSION>.pub
 
 # Verify with native Helm command
 helm verify nats-k8s-oidc-callout-<VERSION>.tgz
