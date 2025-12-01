@@ -1,0 +1,117 @@
+{{ template "chart.header" . }}
+
+{{ template "chart.description" . }}
+
+{{ template "chart.homepageLine" . }}
+
+## Overview
+
+NATS authorization callout service for Kubernetes service account JWT validation. This service validates NATS client connections using Kubernetes service account tokens and enforces namespace-based permissions.
+
+## Prerequisites
+
+- Kubernetes 1.19+
+- Helm 3.0+
+- NATS server with auth callout support
+- NATS credentials for the auth callout service
+
+## Installation
+
+### Option 1: Let Helm create the secret
+
+```bash
+helm install nats-k8s-oidc-callout ./helm/nats-k8s-oidc-callout \
+  --set nats.account=AUTH_ACCOUNT \
+  --set nats.credentials.create=true \
+  --set-file nats.credentials.content=/path/to/auth-callout.creds
+```
+
+### Option 2: Use an existing secret
+
+```bash
+# Create the secret first
+kubectl create secret generic nats-auth-creds \
+  --from-file=credentials=/path/to/auth-callout.creds
+
+# Install the chart
+helm install nats-k8s-oidc-callout ./helm/nats-k8s-oidc-callout \
+  --set nats.account=AUTH_ACCOUNT \
+  --set nats.credentials.existingSecret=nats-auth-creds
+```
+
+{{ template "chart.valuesSection" . }}
+
+## ServiceAccount Permissions
+
+The service watches all ServiceAccounts cluster-wide. Configure cross-namespace access using annotations:
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: my-app
+  annotations:
+    nats.io/allowed-pub-subjects: "app.events,app.commands"
+    nats.io/allowed-sub-subjects: "app.replies"
+```
+
+Default permissions:
+- Namespace isolation: `<namespace>.>` for both publish and subscribe
+- Private inbox pattern: `_INBOX.>` and `_INBOX_<namespace>_<serviceaccount>.>`
+
+## Example: Complete Installation
+
+### Using Helm-managed secret
+
+```bash
+kubectl create namespace nats-system
+
+helm install nats-k8s-oidc-callout ./helm/nats-k8s-oidc-callout \
+  -n nats-system \
+  --set nats.account=AUTH \
+  --set nats.credentials.create=true \
+  --set-file nats.credentials.content=./auth-callout.creds \
+  --set nats.url=nats://nats.nats-system:4222
+```
+
+### Using existing secret
+
+```bash
+kubectl create namespace nats-system
+
+kubectl create secret generic nats-auth-creds \
+  -n nats-system \
+  --from-file=credentials=./auth-callout.creds
+
+helm install nats-k8s-oidc-callout ./helm/nats-k8s-oidc-callout \
+  -n nats-system \
+  --set nats.account=AUTH \
+  --set nats.credentials.existingSecret=nats-auth-creds \
+  --set nats.url=nats://nats.nats-system:4222
+```
+
+## Uninstallation
+
+```bash
+helm uninstall nats-k8s-oidc-callout -n nats-system
+```
+
+## Troubleshooting
+
+### Check pod status
+```bash
+kubectl get pods -n nats-system -l app.kubernetes.io/name=nats-k8s-oidc-callout
+```
+
+### View logs
+```bash
+kubectl logs -n nats-system -l app.kubernetes.io/name=nats-k8s-oidc-callout
+```
+
+### Check health
+```bash
+kubectl port-forward -n nats-system svc/nats-k8s-oidc-callout 8080:8080
+curl http://localhost:8080/healthz
+```
+
+{{ template "helm-docs.versionFooter" . }}

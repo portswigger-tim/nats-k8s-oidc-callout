@@ -1,0 +1,92 @@
+# Default values for nats-k8s-oidc-callout
+
+# -- Number of replicas
+replicaCount: 1
+
+image:
+  # -- Container image repository
+  repository: ghcr.io/portswigger-tim/nats-k8s-oidc-callout
+  # -- Image pull policy
+  pullPolicy: IfNotPresent
+  # -- Overrides the image tag (default is the chart appVersion)
+  tag: ""
+
+nats:
+  # -- NATS server URL
+  # @default -- `nats://nats:4222`
+  url: ""
+
+  # -- NATS account name for the auth callout service (REQUIRED)
+  account: ""
+
+  credentials:
+    # -- Create a new secret for NATS credentials
+    create: false
+    # -- Content of the credentials file (required if create=true). Use `--set-file nats.credentials.content=path/to/file`
+    content: ""
+
+    # -- Name of existing secret containing NATS credentials (required if create=false)
+    existingSecret: ""
+    # -- Key in the existing secret that contains the credentials file
+    existingSecretKey: "credentials"
+
+jwt:
+  # -- JWT issuer for token validation
+  # @default -- `https://kubernetes.default.svc` (in-cluster)
+  issuer: ""
+  # -- JWT audience for token validation
+  # @default -- `nats`
+  audience: ""
+  # -- JWKS URL for JWT validation
+  # @default -- `https://kubernetes.default.svc/openid/v1/jwks` (in-cluster)
+  jwksUrl: ""
+
+# -- Log level (debug, info, warn, error)
+logLevel: info
+
+# -- Resource limits and requests
+resources:
+  limits:
+    cpu: 500m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+rbac:
+  # -- Create ClusterRole and ClusterRoleBinding for ServiceAccount access
+  create: true
+
+serviceAccount:
+  # -- Specifies whether a service account should be created
+  create: true
+  # -- Annotations to add to the service account
+  annotations: {}
+  # -- The name of the service account to use (generated if not set)
+  name: ""
+
+# -- Annotations to add to the pod
+podAnnotations: {}
+
+# -- Pod security context
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  fsGroup: 65532
+
+# -- Container security context
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+
+# -- Node labels for pod assignment
+nodeSelector: {}
+
+# -- Tolerations for pod assignment
+tolerations: []
+
+# -- Affinity for pod assignment
+affinity: {}

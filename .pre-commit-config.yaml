@@ -1,0 +1,42 @@
+repos:
+  # Go hooks
+  - repo: https://github.com/tekwizely/pre-commit-golang
+    rev: v1.0.0-rc.1
+    hooks:
+      # Format Go code
+      - id: go-fmt
+        args: [-w]
+
+      # Run go mod tidy
+      - id: go-mod-tidy
+
+      # Run tests (short mode, on the whole module)
+      - id: go-test-mod
+        args: [-short]
+
+  # Helm hooks
+  - repo: https://github.com/gruntwork-io/pre-commit
+    rev: v0.1.23
+    hooks:
+      # Lint Helm charts
+      - id: helmlint
+        files: ^helm/
+
+  # Helm documentation
+  - repo: https://github.com/norwoodj/helm-docs
+    rev: v1.14.2
+    hooks:
+      - id: helm-docs
+        args:
+          - --chart-search-root=helm
+          - --template-files=README.md.gotmpl
+
+  # Helm unit tests
+  - repo: local
+    hooks:
+      - id: helm-unittest
+        name: helm-unittest
+        entry: bash -c 'helm unittest --strict helm/nats-k8s-oidc-callout'
+        language: system
+        files: ^helm/.*\.(yaml|yml|tpl)$
+        pass_filenames: false

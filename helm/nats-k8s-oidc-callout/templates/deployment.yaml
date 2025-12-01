@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nats-k8s-oidc-callout.fullname" . }}
+  labels:
+    {{- include "nats-k8s-oidc-callout.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "nats-k8s-oidc-callout.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "nats-k8s-oidc-callout.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "nats-k8s-oidc-callout.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+      - name: {{ .Chart.Name }}
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 12 }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        env:
+        - name: PORT
+          value: "8080"
+        - name: LOG_LEVEL
+          value: {{ .Values.logLevel | quote }}
+        - name: NATS_URL
+          value: {{ .Values.nats.url | default "nats://nats:4222" | quote }}
+        - name: NATS_ACCOUNT
+          value: {{ required "nats.account is required" .Values.nats.account | quote }}
+        - name: NATS_CREDS_FILE
+          value: "/etc/nats/credentials"
+        - name: K8S_IN_CLUSTER
+          value: "true"
+        {{- if .Values.jwt.issuer }}
+        - name: JWT_ISSUER
+          value: {{ .Values.jwt.issuer | quote }}
+        {{- end }}
+        {{- if .Values.jwt.audience }}
+        - name: JWT_AUDIENCE
+          value: {{ .Values.jwt.audience | quote }}
+        {{- end }}
+        {{- if .Values.jwt.jwksUrl }}
+        - name: JWKS_URL
+          value: {{ .Values.jwt.jwksUrl | quote }}
+        {{- end }}
+        resources:
+          {{- toYaml .Values.resources | nindent 12 }}
+        volumeMounts:
+        - name: nats-credentials
+          mountPath: /etc/nats
+          readOnly: true
+      volumes:
+      - name: nats-credentials
+        secret:
+          secretName: {{ include "nats-k8s-oidc-callout.natsSecretName" . }}
+          items:
+          - key: {{ include "nats-k8s-oidc-callout.natsSecretKey" . }}
+            path: credentials
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

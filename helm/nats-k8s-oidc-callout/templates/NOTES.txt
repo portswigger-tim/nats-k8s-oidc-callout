@@ -1,0 +1,21 @@
+1. Get the application status:
+  kubectl get pods -l "app.kubernetes.io/name={{ include "nats-k8s-oidc-callout.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -n {{ .Release.Namespace }}
+
+2. Check the logs:
+  kubectl logs -l "app.kubernetes.io/name={{ include "nats-k8s-oidc-callout.name" . }}" -n {{ .Release.Namespace }}
+
+3. Check health:
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "nats-k8s-oidc-callout.fullname" . }} 8080:8080
+  curl http://localhost:8080/healthz
+
+4. View metrics:
+  curl http://localhost:8080/metrics
+
+Configuration:
+  - NATS Account: {{ .Values.nats.account }}
+  - NATS URL: {{ .Values.nats.url | default "nats://nats:4222" }}
+  - Log Level: {{ .Values.logLevel }}
+
+ServiceAccount permissions allow cross-namespace access with annotations:
+  - nats.io/allowed-pub-subjects: "subject1,subject2"
+  - nats.io/allowed-sub-subjects: "subject3,subject4"

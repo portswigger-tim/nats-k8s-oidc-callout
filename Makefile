@@ -6,7 +6,7 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -w -s -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)
 
-.PHONY: test test-unit test-integration test-e2e test-all coverage clean
+.PHONY: test test-unit test-integration test-e2e test-helm test-all coverage clean
 .PHONY: build build-all build-amd64 build-arm64 docker-build docker-push version help
 
 # Default target
@@ -33,8 +33,15 @@ test-e2e:
 	@docker info > /dev/null 2>&1 || (echo "Error: Docker is not running" && exit 1)
 	go test -tags=e2e -v -timeout=10m ./e2e_suite_test.go
 
-# Run all tests (unit + integration + e2e)
-test-all: test-unit test-integration test-e2e
+# Run Helm unit tests (requires helm-unittest plugin)
+test-helm:
+	@echo "Running Helm unit tests..."
+	@command -v helm >/dev/null 2>&1 || { echo "Error: helm is not installed"; exit 1; }
+	@helm plugin list | grep -q unittest || { echo "Error: helm-unittest plugin not installed. Run: helm plugin install https://github.com/helm-unittest/helm-unittest"; exit 1; }
+	helm unittest --strict helm/nats-k8s-oidc-callout
+
+# Run all tests (unit + integration + e2e + helm)
+test-all: test-unit test-integration test-e2e test-helm
 
 # Run tests with coverage
 coverage:
@@ -108,6 +115,13 @@ version:
 	@echo "Commit:     $(COMMIT)"
 	@echo "Build Date: $(BUILD_DATE)"
 
+# Generate Helm chart documentation
+helm-docs:
+	@echo "Generating Helm chart documentation..."
+	docker run --rm -v "$$(pwd):/helm-docs" -u $$(id -u) jnorwood/helm-docs:v1.14.2 \
+		--chart-search-root=helm \
+		--template-files=README.md.gotmpl
+
 # Help message
 help:
 	@echo "Available targets:"
@@ -128,8 +142,13 @@ help:
 	@echo "  test-unit     - Run unit tests only"
 	@echo "  test-integration - Run integration tests (requires Docker)"
 	@echo "  test-e2e      - Run E2E tests (requires Docker)"
-	@echo "  test-all      - Run all tests"
+	@echo "  test-helm     - Run Helm unit tests (requires helm-unittest plugin)"
+	@echo "  test-all      - Run all tests (unit + integration + e2e + helm)"
 	@echo "  coverage      - Run tests with coverage"
+	@echo ""
+	@echo "Helm targets:"
+	@echo "  helm-docs     - Generate Helm chart documentation"
+	@echo "  test-helm     - Run Helm unit tests"
 	@echo ""
 	@echo "Utility targets:"
 	@echo "  version       - Display version information"

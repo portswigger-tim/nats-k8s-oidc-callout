@@ -33,10 +33,7 @@ Go-based NATS auth callout service for Kubernetes service account JWT validation
 - Authorization handler (100% test coverage)
 - NATS client (auth callout integration)
 - E2E tests (k3s + NATS, 4 scenarios)
-
-### 📋 Remaining
-- Helm chart
-- Deployment manifests
+- Helm chart with unit tests (deployment, service, RBAC, secrets)
 
 ## Project Structure
 
@@ -71,6 +68,7 @@ docs/                - Documentation
 - Unit: All internal packages
 - Integration: testcontainers NATS
 - E2E: k3s + NATS + real tokens
+- Helm: Unit tests for all chart templates
 - Coverage: auth 100%, k8s 81%, jwt 72%
 
 ## Development
@@ -85,6 +83,8 @@ make docker-build   # Docker image
 ```bash
 make test           # Unit tests
 make test-e2e       # E2E tests (requires Docker)
+make test-helm      # Helm unit tests (requires helm-unittest plugin)
+make test-all       # All tests (unit + integration + e2e + helm)
 ```
 
 **Run:**
