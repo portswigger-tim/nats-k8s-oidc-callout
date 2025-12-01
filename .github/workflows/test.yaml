@@ -34,7 +34,6 @@ jobs:
         uses: mamezou-tech/setup-helmfile@v2.1.0
         with:
           install-kubectl: no
-          install-helmfile: no
           additional-helm-plugins: https://github.com/helm-unittest/helm-unittest
 
       - name: Run golangci-lint
