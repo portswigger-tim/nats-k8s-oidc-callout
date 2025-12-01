@@ -9,11 +9,15 @@ Thread-safe ServiceAccount cache with Kubernetes informer integration.
 
 ## Permission Model
 
-**Default:** Namespace isolation (`<namespace>.>`)
+**Default Publish:** Namespace isolation (`<namespace>.>`)
+
+**Default Subscribe:**
+- Namespace isolation: `<namespace>.>`
+- Inbox patterns: `_INBOX.>`, `_INBOX_<namespace>_<serviceaccount>.>`
 
 **Annotations:**
-- `nats.io/allowed-pub-subjects`
-- `nats.io/allowed-sub-subjects`
+- `nats.io/allowed-pub-subjects` - Additional publish subjects
+- `nats.io/allowed-sub-subjects` - Additional subscribe subjects
 
 **Example:**
 ```yaml
@@ -28,8 +32,8 @@ metadata:
 ```
 
 Results in:
-- Pub: `production.>`, `platform.events.>`, `shared.metrics.*`
-- Sub: `production.>`, `platform.commands.*`, `shared.status`
+- Pub: `production.>` (default), `platform.events.>`, `shared.metrics.*`
+- Sub: `_INBOX.>`, `_INBOX_production_my-service.>` (inbox defaults), `production.>` (default), `platform.commands.*`, `shared.status`
 
 ## Usage
 

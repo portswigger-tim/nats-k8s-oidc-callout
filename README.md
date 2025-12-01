@@ -86,8 +86,7 @@ See [Client Usage Guide](docs/CLIENT_USAGE.md) for implementation examples.
 - Authorization handler
 - NATS auth callout integration
 - E2E tests with k3s + NATS
-
-**📋 Planned:** Helm chart and deployment manifests
+- Helm chart with unit tests
 
 ## Testing
 
