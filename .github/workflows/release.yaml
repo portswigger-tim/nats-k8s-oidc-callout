@@ -218,9 +218,11 @@ jobs:
         run: |
           # Package and sign with GPG (creates .prov file)
           # Use substring of uid to identify the key (matches Name-Real)
+          # Specify keyring location for secret keys
           helm package helm/nats-k8s-oidc-callout -d . \
             --sign \
-            --key "NATS K8s OIDC Callout Release"
+            --key "NATS K8s OIDC Callout Release" \
+            --keyring ~/.gnupg/secring.gpg
 
           CHART_VERSION="${{ steps.calver.outputs.tag }}"
           CHART_VERSION="${CHART_VERSION#v}"
