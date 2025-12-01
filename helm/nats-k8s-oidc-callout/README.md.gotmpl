@@ -17,7 +17,153 @@ NATS authorization callout service for Kubernetes service account JWT validation
 
 ## Installation
 
-### Option 1: Let Helm create the secret
+### From OCI Registry (Recommended)
+
+The chart is published as an OCI artifact to GitHub Container Registry (ghcr.io) with each release.
+
+#### Option 1: Let Helm create the secret
+
+```bash
+helm install nats-k8s-oidc-callout \
+  oci://ghcr.io/portswigger-tim/charts/nats-k8s-oidc-callout \
+  --version <VERSION> \
+  --set nats.account=AUTH_ACCOUNT \
+  --set nats.credentials.create=true \
+  --set-file nats.credentials.content=/path/to/auth-callout.creds
+```
+
+#### Option 2: Use an existing secret
+
+```bash
+# Create the secret first
+kubectl create secret generic nats-auth-creds \
+  --from-file=credentials=/path/to/auth-callout.creds
+
+# Install the chart
+helm install nats-k8s-oidc-callout \
+  oci://ghcr.io/portswigger-tim/charts/nats-k8s-oidc-callout \
+  --version <VERSION> \
+  --set nats.account=AUTH_ACCOUNT \
+  --set nats.credentials.existingSecret=nats-auth-creds
+```
+
+**Finding the latest version:**
+
+```bash
+# List available versions
+helm show chart oci://ghcr.io/portswigger-tim/charts/nats-k8s-oidc-callout
+
+# Or visit the GitHub releases page
+# https://github.com/portswigger-tim/nats-k8s-oidc-callout/releases
+```
+
+### Verifying Chart Signatures
+
+All released charts are signed with [Sigstore](https://www.sigstore.dev/) using keyless signing. The signatures are stored in the transparency log and can be verified to ensure the chart hasn't been tampered with.
+
+#### Method 1: Using helm-sigstore Plugin (Recommended)
+
+The [helm-sigstore](https://github.com/sigstore/helm-sigstore) plugin provides the simplest verification experience for Helm users.
+
+**Install the plugin:**
+```bash
+helm plugin install https://github.com/sigstore/helm-sigstore
+```
+
+**Verify a chart:**
+```bash
+# Download the chart from GitHub releases
+wget https://github.com/portswigger-tim/nats-k8s-oidc-callout/releases/download/<VERSION>/nats-k8s-oidc-callout-<VERSION>.tgz
+
+# Verify with helm-sigstore
+helm sigstore verify nats-k8s-oidc-callout-<VERSION>.tgz
+```
+
+#### Method 2: Native Helm Verification (GPG)
+
+Traditional Helm provenance verification using GPG signatures. Each release includes a GPG-signed `.prov` file and the public key used to sign it.
+
+**Verify a chart:**
+```bash
+# Download chart, provenance, and public key from GitHub releases
+wget https://github.com/portswigger-tim/nats-k8s-oidc-callout/releases/download/<VERSION>/nats-k8s-oidc-callout-<VERSION>.tgz
+wget https://github.com/portswigger-tim/nats-k8s-oidc-callout/releases/download/<VERSION>/nats-k8s-oidc-callout-<VERSION>.tgz.prov
+wget https://github.com/portswigger-tim/nats-k8s-oidc-callout/releases/download/<VERSION>/nats-k8s-oidc-callout-<VERSION>.pub.key
+
+# Import the public key for this release
+gpg --import nats-k8s-oidc-callout-<VERSION>.pub.key
+
+# Verify with native Helm command
+helm verify nats-k8s-oidc-callout-<VERSION>.tgz
+```
+
+**Note:** Each release uses a unique GPG key pair. The public key is included in the release assets and must be imported before verification.
+
+#### Method 3: Using Cosign Directly
+
+If you prefer not to install the plugin, you can use [Cosign](https://github.com/sigstore/cosign) directly.
+
+**Install Cosign:**
+```bash
+brew install cosign  # macOS
+# or download from https://github.com/sigstore/cosign/releases
+```
+
+**Verify a chart:**
+```bash
+# Download the chart and signature bundle from GitHub releases
+wget https://github.com/portswigger-tim/nats-k8s-oidc-callout/releases/download/<VERSION>/nats-k8s-oidc-callout-<VERSION>.tgz
+wget https://github.com/portswigger-tim/nats-k8s-oidc-callout/releases/download/<VERSION>/nats-k8s-oidc-callout-<VERSION>.tgz.bundle
+
+# Verify the signature
+cosign verify-blob \
+  --bundle nats-k8s-oidc-callout-<VERSION>.tgz.bundle \
+  --certificate-identity-regexp="https://github.com/portswigger-tim/nats-k8s-oidc-callout/" \
+  --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+  nats-k8s-oidc-callout-<VERSION>.tgz
+```
+
+**What gets verified:**
+- Certificate subject matches the GitHub repository
+- Certificate issuer is GitHub Actions OIDC provider
+- Signature is recorded in Rekor transparency log
+- Chart hasn't been modified since signing
+
+#### Method 4: Verify OCI Chart in Registry
+
+Charts in the OCI registry are also signed and include SLSA provenance attestations. You can verify them directly from the registry.
+
+**Verify OCI chart signature:**
+```bash
+cosign verify \
+  --certificate-identity-regexp="https://github.com/portswigger-tim/nats-k8s-oidc-callout/" \
+  --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+  ghcr.io/portswigger-tim/charts/nats-k8s-oidc-callout:<VERSION>
+```
+
+**Verify SLSA provenance:**
+```bash
+cosign verify-attestation \
+  --type slsaprovenance \
+  --certificate-identity-regexp="https://github.com/portswigger-tim/nats-k8s-oidc-callout/" \
+  --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+  ghcr.io/portswigger-tim/charts/nats-k8s-oidc-callout:<VERSION>
+```
+
+**View provenance details:**
+```bash
+cosign verify-attestation \
+  --type slsaprovenance \
+  --certificate-identity-regexp="https://github.com/portswigger-tim/nats-k8s-oidc-callout/" \
+  --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+  ghcr.io/portswigger-tim/charts/nats-k8s-oidc-callout:<VERSION> | jq -r '.payload' | base64 -d | jq
+```
+
+### From Local Source (Development)
+
+For development or testing with local modifications:
+
+#### Option 1: Let Helm create the secret
 
 ```bash
 helm install nats-k8s-oidc-callout ./helm/nats-k8s-oidc-callout \
@@ -26,7 +172,7 @@ helm install nats-k8s-oidc-callout ./helm/nats-k8s-oidc-callout \
   --set-file nats.credentials.content=/path/to/auth-callout.creds
 ```
 
-### Option 2: Use an existing secret
+#### Option 2: Use an existing secret
 
 ```bash
 # Create the secret first
@@ -61,7 +207,44 @@ Default permissions:
 
 ## Example: Complete Installation
 
-### Using Helm-managed secret
+### From OCI Registry (Production)
+
+#### Using Helm-managed secret
+
+```bash
+kubectl create namespace nats-system
+
+helm install nats-k8s-oidc-callout \
+  oci://ghcr.io/portswigger-tim/charts/nats-k8s-oidc-callout \
+  --version <VERSION> \
+  -n nats-system \
+  --set nats.account=AUTH \
+  --set nats.credentials.create=true \
+  --set-file nats.credentials.content=./auth-callout.creds \
+  --set nats.url=nats://nats.nats-system:4222
+```
+
+#### Using existing secret
+
+```bash
+kubectl create namespace nats-system
+
+kubectl create secret generic nats-auth-creds \
+  -n nats-system \
+  --from-file=credentials=./auth-callout.creds
+
+helm install nats-k8s-oidc-callout \
+  oci://ghcr.io/portswigger-tim/charts/nats-k8s-oidc-callout \
+  --version <VERSION> \
+  -n nats-system \
+  --set nats.account=AUTH \
+  --set nats.credentials.existingSecret=nats-auth-creds \
+  --set nats.url=nats://nats.nats-system:4222
+```
+
+### From Local Source (Development)
+
+#### Using Helm-managed secret
 
 ```bash
 kubectl create namespace nats-system
@@ -74,7 +257,7 @@ helm install nats-k8s-oidc-callout ./helm/nats-k8s-oidc-callout \
   --set nats.url=nats://nats.nats-system:4222
 ```
 
-### Using existing secret
+#### Using existing secret
 
 ```bash
 kubectl create namespace nats-system

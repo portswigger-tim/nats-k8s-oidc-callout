@@ -162,16 +162,165 @@ jobs:
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 
+      # Helm Chart Release
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.7.0
+
+      - name: Generate ephemeral GPG key
+        id: gpg
+        run: |
+          CHART_VERSION="${{ steps.calver.outputs.tag }}"
+          CHART_VERSION="${CHART_VERSION#v}"
+
+          # Generate GPG key for this release only
+          cat >gpg-batch <<EOF
+          %no-protection
+          Key-Type: RSA
+          Key-Length: 4096
+          Name-Real: NATS K8s OIDC Callout Release ${CHART_VERSION}
+          Name-Email: noreply@github.com
+          Expire-Date: 0
+          %commit
+          EOF
+
+          gpg --batch --generate-key gpg-batch
+
+          # Get the key ID
+          GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | grep sec | awk '{print $2}' | cut -d'/' -f2 | head -n1)
+          echo "key_id=${GPG_KEY_ID}" >> $GITHUB_OUTPUT
+
+          # Export public key with versioned filename
+          gpg --armor --export ${GPG_KEY_ID} > nats-k8s-oidc-callout-${CHART_VERSION}.pub.key
+
+          echo "Generated GPG key: ${GPG_KEY_ID}"
+          echo "Public key: nats-k8s-oidc-callout-${CHART_VERSION}.pub.key"
+
+      - name: Update Helm chart version
+        run: |
+          # Remove 'v' prefix from CalVer tag for Helm chart version
+          CHART_VERSION="${{ steps.calver.outputs.tag }}"
+          CHART_VERSION="${CHART_VERSION#v}"
+
+          # Update Chart.yaml with the CalVer version
+          sed -i "s/^version:.*/version: ${CHART_VERSION}/" helm/nats-k8s-oidc-callout/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${{ steps.calver.outputs.tag }}\"/" helm/nats-k8s-oidc-callout/Chart.yaml
+
+          echo "Updated Chart.yaml:"
+          cat helm/nats-k8s-oidc-callout/Chart.yaml
+
+      - name: Package and sign Helm chart
+        run: |
+          # Package and sign with GPG (creates .prov file)
+          helm package helm/nats-k8s-oidc-callout -d . \
+            --sign \
+            --key "${{ steps.gpg.outputs.key_id }}"
+
+          CHART_VERSION="${{ steps.calver.outputs.tag }}"
+          CHART_VERSION="${CHART_VERSION#v}"
+
+          # Verify .prov file was created
+          ls -lah nats-k8s-oidc-callout-${CHART_VERSION}.tgz*
+          echo "Created Helm provenance file (.prov)"
+
+      - name: Sign Helm chart with Cosign
+        run: |
+          CHART_VERSION="${{ steps.calver.outputs.tag }}"
+          CHART_VERSION="${CHART_VERSION#v}"
+
+          # Sign the chart package (keyless signing using GitHub OIDC)
+          cosign sign-blob \
+            --yes \
+            --bundle nats-k8s-oidc-callout-${CHART_VERSION}.tgz.bundle \
+            nats-k8s-oidc-callout-${CHART_VERSION}.tgz
+
+          # Verify the files were created
+          ls -lah nats-k8s-oidc-callout-${CHART_VERSION}.tgz*
+
+          echo "Chart signed with keyless Cosign signing"
+          echo "Signature bundle: nats-k8s-oidc-callout-${CHART_VERSION}.tgz.bundle"
+
+      - name: Push Helm chart to GHCR
+        run: |
+          CHART_VERSION="${{ steps.calver.outputs.tag }}"
+          CHART_VERSION="${CHART_VERSION#v}"
+
+          # Login to GHCR for Helm
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ${{ env.REGISTRY }} --username ${{ github.actor }} --password-stdin
+
+          # Push chart as OCI artifact
+          helm push nats-k8s-oidc-callout-${CHART_VERSION}.tgz oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/charts
+
+      - name: Sign OCI Helm chart
+        run: |
+          CHART_VERSION="${{ steps.calver.outputs.tag }}"
+          CHART_VERSION="${CHART_VERSION#v}"
+
+          # Sign the OCI artifact in the registry (keyless signing)
+          cosign sign --yes \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/charts/nats-k8s-oidc-callout:${CHART_VERSION}
+
+          echo "OCI chart signed: ${{ env.REGISTRY }}/${{ github.repository_owner }}/charts/nats-k8s-oidc-callout:${CHART_VERSION}"
+
+      - name: Attest Helm chart provenance
+        run: |
+          CHART_VERSION="${{ steps.calver.outputs.tag }}"
+          CHART_VERSION="${CHART_VERSION#v}"
+
+          # Generate SLSA provenance predicate
+          cat > predicate.json << EOF
+          {
+            "buildType": "https://github.com/Attestations/GitHubActionsWorkflow@v1",
+            "builder": {
+              "id": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            },
+            "invocation": {
+              "configSource": {
+                "uri": "git+https://github.com/${{ github.repository }}",
+                "digest": {
+                  "sha1": "${{ github.sha }}"
+                },
+                "entryPoint": ".github/workflows/release.yaml"
+              }
+            },
+            "metadata": {
+              "buildStartedOn": "${{ github.event.repository.updated_at }}",
+              "buildFinishedOn": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+              "completeness": {
+                "parameters": true,
+                "environment": false,
+                "materials": false
+              },
+              "reproducible": false
+            }
+          }
+          EOF
+
+          # Attach SLSA provenance to the OCI chart
+          cosign attest --yes \
+            --predicate predicate.json \
+            --type slsaprovenance \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/charts/nats-k8s-oidc-callout:${CHART_VERSION}
+
+          echo "SLSA provenance attached to OCI chart"
+
       # Release
       - name: Generate release notes
         id: notes
         run: |
-          cat > release-notes.md << 'EOF'
+          CHART_VERSION="${{ steps.calver.outputs.tag }}"
+          CHART_VERSION="${CHART_VERSION#v}"
+          cat > release-notes.md << EOF
           ## Container Image
 
-          ```
+          \`\`\`bash
           docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.calver.outputs.tag }}
-          ```
+          \`\`\`
+
+          ## Helm Chart
+
+          \`\`\`bash
+          helm install nats-k8s-oidc-callout oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/charts/nats-k8s-oidc-callout --version ${CHART_VERSION}
+          \`\`\`
 
           ## Verification
 
@@ -180,10 +329,60 @@ jobs:
           - ✅ SBOM (Software Bill of Materials)
           - ✅ Vulnerability scanning
           - ✅ Multi-architecture support (amd64, arm64)
+          - ✅ Helm chart as signed OCI artifact
+          - ✅ GPG-signed Helm provenance (.prov)
+          - ✅ SLSA provenance attestations
+          - ✅ Keyless Cosign signatures (Sigstore)
+
+          ### Verify Helm Chart
+
+          **Option 1: Verify OCI chart in registry (recommended)**
+          \`\`\`bash
+          # Verify signature
+          cosign verify \\
+            --certificate-identity-regexp="https://github.com/${{ github.repository }}/" \\
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \\
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/charts/nats-k8s-oidc-callout:${CHART_VERSION}
+
+          # Verify SLSA provenance
+          cosign verify-attestation \\
+            --type slsaprovenance \\
+            --certificate-identity-regexp="https://github.com/${{ github.repository }}/" \\
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \\
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/charts/nats-k8s-oidc-callout:${CHART_VERSION}
+          \`\`\`
+
+          **Option 2: Native Helm verification (GPG)**
+          \`\`\`bash
+          # Download chart, provenance, and public key
+          wget https://github.com/${{ github.repository }}/releases/download/${{ steps.calver.outputs.tag }}/nats-k8s-oidc-callout-${CHART_VERSION}.tgz
+          wget https://github.com/${{ github.repository }}/releases/download/${{ steps.calver.outputs.tag }}/nats-k8s-oidc-callout-${CHART_VERSION}.tgz.prov
+          wget https://github.com/${{ github.repository }}/releases/download/${{ steps.calver.outputs.tag }}/nats-k8s-oidc-callout-${CHART_VERSION}.pub.key
+
+          # Import the public key
+          gpg --import nats-k8s-oidc-callout-${CHART_VERSION}.pub.key
+
+          # Verify with Helm
+          helm verify nats-k8s-oidc-callout-${CHART_VERSION}.tgz
+          \`\`\`
+
+          **Option 3: Verify with Cosign**
+          \`\`\`bash
+          # Download the chart and signature bundle
+          wget https://github.com/${{ github.repository }}/releases/download/${{ steps.calver.outputs.tag }}/nats-k8s-oidc-callout-${CHART_VERSION}.tgz
+          wget https://github.com/${{ github.repository }}/releases/download/${{ steps.calver.outputs.tag }}/nats-k8s-oidc-callout-${CHART_VERSION}.tgz.bundle
+
+          # Verify with Cosign
+          cosign verify-blob \\
+            --bundle nats-k8s-oidc-callout-${CHART_VERSION}.tgz.bundle \\
+            --certificate-identity-regexp="https://github.com/${{ github.repository }}/" \\
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \\
+            nats-k8s-oidc-callout-${CHART_VERSION}.tgz
+          \`\`\`
 
           ## Changes
 
-          $(git log --pretty=format:"- %s (%h)" $(git describe --tags --abbrev=0 2>/dev/null || echo "")..HEAD)
+          $(git log --pretty=format:"- %s (%h)" \$(git describe --tags --abbrev=0 2>/dev/null || echo "")..HEAD)
           EOF
 
       - name: Create GitHub Release
@@ -195,6 +394,10 @@ jobs:
           files: |
             out/*
             sbom.spdx.json
+            nats-k8s-oidc-callout-*.tgz
+            nats-k8s-oidc-callout-*.tgz.prov
+            nats-k8s-oidc-callout-*.tgz.bundle
+            nats-k8s-oidc-callout-*.pub.key
           draft: false
           prerelease: false
           make_latest: true
