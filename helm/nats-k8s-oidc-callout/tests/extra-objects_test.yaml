@@ -1,0 +1,185 @@
+suite: test extra-objects
+templates:
+  - extra-objects.yaml
+tests:
+  - it: should not render anything when extraObjects is empty
+    set:
+      nats:
+        account: "test-account"
+        credentials:
+          existingSecret: "test-secret"
+      extraObjects: []
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should render a ConfigMap when provided
+    set:
+      nats:
+        account: "test-account"
+        credentials:
+          existingSecret: "test-secret"
+      extraObjects:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: test-configmap
+          data:
+            key: value
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: metadata.name
+          value: test-configmap
+      - equal:
+          path: data.key
+          value: value
+
+  - it: should render a Secret when provided
+    set:
+      nats:
+        account: "test-account"
+        credentials:
+          existingSecret: "test-secret"
+      extraObjects:
+        - apiVersion: v1
+          kind: Secret
+          metadata:
+            name: test-secret-extra
+          type: Opaque
+          stringData:
+            password: secret123
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Secret
+      - equal:
+          path: metadata.name
+          value: test-secret-extra
+      - equal:
+          path: stringData.password
+          value: secret123
+
+  - it: should render multiple objects
+    set:
+      nats:
+        account: "test-account"
+        credentials:
+          existingSecret: "test-secret"
+      extraObjects:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: configmap1
+          data:
+            key1: value1
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: configmap2
+          data:
+            key2: value2
+        - apiVersion: v1
+          kind: Secret
+          metadata:
+            name: secret1
+          type: Opaque
+          stringData:
+            password: pass1
+    asserts:
+      - hasDocuments:
+          count: 3
+
+  - it: should support templating with Helm functions
+    set:
+      nats:
+        account: "test-account"
+        credentials:
+          existingSecret: "test-secret"
+      extraObjects:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: '{{ include "nats-k8s-oidc-callout.fullname" . }}-custom'
+            labels:
+              app: '{{ .Chart.Name }}'
+          data:
+            release: '{{ .Release.Name }}'
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-nats-k8s-oidc-callout-custom
+      - equal:
+          path: metadata.labels.app
+          value: nats-k8s-oidc-callout
+      - equal:
+          path: data.release
+          value: RELEASE-NAME
+
+  - it: should render any valid Kubernetes object
+    set:
+      nats:
+        account: "test-account"
+        credentials:
+          existingSecret: "test-secret"
+      extraObjects:
+        - apiVersion: v1
+          kind: Service
+          metadata:
+            name: extra-service
+          spec:
+            selector:
+              app: extra
+            ports:
+              - port: 9000
+                targetPort: 9000
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Service
+      - equal:
+          path: metadata.name
+          value: extra-service
+      - equal:
+          path: spec.ports[0].port
+          value: 9000
+
+  - it: should preserve complex nested structures
+    set:
+      nats:
+        account: "test-account"
+        credentials:
+          existingSecret: "test-secret"
+      extraObjects:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: complex-config
+            annotations:
+              annotation1: value1
+              annotation2: value2
+          data:
+            config.yaml: |
+              key1: value1
+              nested:
+                key2: value2
+                list:
+                  - item1
+                  - item2
+    asserts:
+      - equal:
+          path: metadata.annotations.annotation1
+          value: value1
+      - equal:
+          path: metadata.annotations.annotation2
+          value: value2
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "key1: value1"

@@ -1,0 +1,253 @@
+suite: test networkpolicy
+templates:
+  - networkpolicy.yaml
+tests:
+  - it: should not create NetworkPolicy when disabled
+    set:
+      nats:
+        account: "test-account"
+        credentials:
+          existingSecret: "test-secret"
+      networkPolicy:
+        enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should create NetworkPolicy with correct metadata when enabled
+    set:
+      nats:
+        account: "test-account"
+        credentials:
+          existingSecret: "test-secret"
+      networkPolicy:
+        enabled: true
+    asserts:
+      - isKind:
+          of: NetworkPolicy
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-nats-k8s-oidc-callout
+      - matchRegex:
+          path: metadata.labels["helm.sh/chart"]
+          pattern: ^nats-k8s-oidc-callout-
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: nats-k8s-oidc-callout
+
+  - it: should have correct pod selector
+    set:
+      nats:
+        account: "test-account"
+        credentials:
+          existingSecret: "test-secret"
+      networkPolicy:
+        enabled: true
+    asserts:
+      - equal:
+          path: spec.podSelector.matchLabels["app.kubernetes.io/name"]
+          value: nats-k8s-oidc-callout
+      - equal:
+          path: spec.podSelector.matchLabels["app.kubernetes.io/instance"]
+          value: RELEASE-NAME
+
+  - it: should have both Ingress and Egress policy types
+    set:
+      nats:
+        account: "test-account"
+        credentials:
+          existingSecret: "test-secret"
+      networkPolicy:
+        enabled: true
+    asserts:
+      - contains:
+          path: spec.policyTypes
+          content: Ingress
+      - contains:
+          path: spec.policyTypes
+          content: Egress
+
+  - it: should have default ingress rule for port 8080
+    set:
+      nats:
+        account: "test-account"
+        credentials:
+          existingSecret: "test-secret"
+      networkPolicy:
+        enabled: true
+    asserts:
+      - contains:
+          path: spec.ingress
+          content:
+            ports:
+              - protocol: TCP
+                port: 8080
+
+  - it: should use custom ingress rules when provided
+    set:
+      nats:
+        account: "test-account"
+        credentials:
+          existingSecret: "test-secret"
+      networkPolicy:
+        enabled: true
+        ingress:
+          - ports:
+              - protocol: TCP
+                port: 8080
+            from:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: monitoring
+    asserts:
+      - lengthEqual:
+          path: spec.ingress
+          count: 1
+      - equal:
+          path: spec.ingress[0].from[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"]
+          value: monitoring
+
+  - it: should have default egress rules (DNS, NATS, K8s API)
+    set:
+      nats:
+        account: "test-account"
+        credentials:
+          existingSecret: "test-secret"
+      networkPolicy:
+        enabled: true
+    asserts:
+      # DNS rule
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - protocol: UDP
+                port: 53
+            to:
+              - namespaceSelector: {}
+      # NATS rule
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - protocol: TCP
+                port: 4222
+      # K8s API rule
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - protocol: TCP
+                port: 443
+            to:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: default
+                podSelector:
+                  matchLabels:
+                    component: apiserver
+
+  - it: should use custom egress rules when provided
+    set:
+      nats:
+        account: "test-account"
+        credentials:
+          existingSecret: "test-secret"
+      networkPolicy:
+        enabled: true
+        egress:
+          - ports:
+              - protocol: TCP
+                port: 4222
+            to:
+              - podSelector:
+                  matchLabels:
+                    app: nats
+    asserts:
+      - lengthEqual:
+          path: spec.egress
+          count: 1
+      - equal:
+          path: spec.egress[0].to[0].podSelector.matchLabels.app
+          value: nats
+
+  - it: should include NATS selector in default egress when provided
+    set:
+      nats:
+        account: "test-account"
+        credentials:
+          existingSecret: "test-secret"
+      networkPolicy:
+        enabled: true
+        natsSelector:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: nats-system
+            podSelector:
+              matchLabels:
+                app: nats
+    asserts:
+      # Find the NATS egress rule (port 4222)
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - protocol: TCP
+                port: 4222
+            to:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: nats-system
+                podSelector:
+                  matchLabels:
+                    app: nats
+
+  - it: should allow empty natsSelector with default NATS egress
+    set:
+      nats:
+        account: "test-account"
+        credentials:
+          existingSecret: "test-secret"
+      networkPolicy:
+        enabled: true
+        natsSelector: []
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - protocol: TCP
+                port: 4222
+
+  - it: should use custom NATS port when provided
+    set:
+      nats:
+        account: "test-account"
+        credentials:
+          existingSecret: "test-secret"
+      networkPolicy:
+        enabled: true
+        natsPort: 4223
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - protocol: TCP
+                port: 4223
+
+  - it: should use default NATS port 4222 when not specified
+    set:
+      nats:
+        account: "test-account"
+        credentials:
+          existingSecret: "test-secret"
+      networkPolicy:
+        enabled: true
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - protocol: TCP
+                port: 4222

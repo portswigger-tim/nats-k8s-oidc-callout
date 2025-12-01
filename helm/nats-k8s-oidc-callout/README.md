@@ -172,6 +172,7 @@ helm install nats-k8s-oidc-callout ./helm/nats-k8s-oidc-callout \
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Affinity for pod assignment |
+| extraObjects | list | `[]` | Additional Kubernetes objects to deploy (e.g., ConfigMaps, Secrets, etc.) Supports templating with `tpl` function |
 | image.pullPolicy | string | `"IfNotPresent"` | Image pull policy |
 | image.repository | string | `"ghcr.io/portswigger-tim/nats-k8s-oidc-callout"` | Container image repository |
 | image.tag | string | `""` | Overrides the image tag (default is the chart appVersion) |
@@ -185,6 +186,11 @@ helm install nats-k8s-oidc-callout ./helm/nats-k8s-oidc-callout \
 | nats.credentials.existingSecret | string | `""` | Name of existing secret containing NATS credentials (required if create=false) |
 | nats.credentials.existingSecretKey | string | `"credentials"` | Key in the existing secret that contains the credentials file |
 | nats.url | string | `nats://nats:4222` | NATS server URL |
+| networkPolicy.egress | list | `[]` | Custom egress rules (if not specified, allows DNS, NATS, and K8s API) |
+| networkPolicy.enabled | bool | `false` | Enable NetworkPolicy |
+| networkPolicy.ingress | list | `[]` | Custom ingress rules (if not specified, allows port 8080 from anywhere in cluster) |
+| networkPolicy.natsPort | int | `4222` | NATS server port for egress rules |
+| networkPolicy.natsSelector | list | `[]` | Selector for NATS pods (used in default egress rules) |
 | nodeSelector | object | `{}` | Node labels for pod assignment |
 | podAnnotations | object | `{}` | Annotations to add to the pod |
 | podSecurityContext | object | `{"fsGroup":65532,"runAsNonRoot":true,"runAsUser":65532}` | Pod security context |

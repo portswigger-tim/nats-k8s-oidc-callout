@@ -90,3 +90,50 @@ tolerations: []
 
 # -- Affinity for pod assignment
 affinity: {}
+
+networkPolicy:
+  # -- Enable NetworkPolicy
+  enabled: false
+
+  # -- NATS server port for egress rules
+  # @default -- `4222`
+  natsPort: 4222
+
+  # -- Custom ingress rules (if not specified, allows port 8080 from anywhere in cluster)
+  ingress: []
+  # - ports:
+  #   - protocol: TCP
+  #     port: 8080
+  #   from:
+  #   - namespaceSelector:
+  #       matchLabels:
+  #         kubernetes.io/metadata.name: monitoring
+
+  # -- Custom egress rules (if not specified, allows DNS, NATS, and K8s API)
+  egress: []
+  # - ports:
+  #   - protocol: TCP
+  #     port: 4222
+  #   to:
+  #   - podSelector:
+  #       matchLabels:
+  #         app: nats
+
+  # -- Selector for NATS pods (used in default egress rules)
+  natsSelector: []
+  # - namespaceSelector:
+  #     matchLabels:
+  #       kubernetes.io/metadata.name: nats-system
+  #   podSelector:
+  #     matchLabels:
+  #       app: nats
+
+# -- Additional Kubernetes objects to deploy (e.g., ConfigMaps, Secrets, etc.)
+# Supports templating with `tpl` function
+extraObjects: []
+# - apiVersion: v1
+#   kind: ConfigMap
+#   metadata:
+#     name: {{ include "nats-k8s-oidc-callout.fullname" . }}-extra
+#   data:
+#     key: value

@@ -1,0 +1,54 @@
+{{- if .Values.networkPolicy.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nats-k8s-oidc-callout.fullname" . }}
+  labels:
+    {{- include "nats-k8s-oidc-callout.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "nats-k8s-oidc-callout.selectorLabels" . | nindent 6 }}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  {{- if .Values.networkPolicy.ingress }}
+  {{- toYaml .Values.networkPolicy.ingress | nindent 2 }}
+  {{- else }}
+  # Allow health check probes from anywhere in cluster
+  - ports:
+    - protocol: TCP
+      port: 8080
+  {{- end }}
+  egress:
+  {{- if .Values.networkPolicy.egress }}
+  {{- toYaml .Values.networkPolicy.egress | nindent 2 }}
+  {{- else }}
+  # Allow DNS queries
+  - ports:
+    - protocol: UDP
+      port: 53
+    to:
+    - namespaceSelector: {}
+  # Allow NATS connection
+  - ports:
+    - protocol: TCP
+      port: {{ .Values.networkPolicy.natsPort | default 4222 }}
+    {{- if .Values.networkPolicy.natsSelector }}
+    to:
+    {{- toYaml .Values.networkPolicy.natsSelector | nindent 4 }}
+    {{- end }}
+  # Allow Kubernetes API access
+  - ports:
+    - protocol: TCP
+      port: 443
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: default
+      podSelector:
+        matchLabels:
+          component: apiserver
+  {{- end }}
+{{- end }}
