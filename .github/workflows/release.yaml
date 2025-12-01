@@ -386,6 +386,7 @@ jobs:
           EOF
 
       - name: Create GitHub Release
+        id: create_release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.calver.outputs.tag }}
@@ -403,3 +404,104 @@ jobs:
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    outputs:
+      calver_tag: ${{ steps.calver.outputs.tag }}
+
+  verify-release:
+    name: Verify Release Artifacts
+    runs-on: ubuntu-latest
+    needs: release
+    steps:
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.7.0
+
+      - name: Setup Helm
+        uses: mamezou-tech/setup-helmfile@v2.1.0
+        with:
+          install-kubectl: no
+
+      - name: Set version variables
+        id: version
+        run: |
+          CALVER_TAG="${{ needs.release.outputs.calver_tag }}"
+          CHART_VERSION="${CALVER_TAG#v}"
+          echo "calver_tag=${CALVER_TAG}" >> $GITHUB_OUTPUT
+          echo "chart_version=${CHART_VERSION}" >> $GITHUB_OUTPUT
+          echo "Verifying release: ${CALVER_TAG} (chart: ${CHART_VERSION})"
+
+      - name: Download release artifacts
+        run: |
+          CHART_VERSION="${{ steps.version.outputs.chart_version }}"
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.calver_tag }}"
+
+          echo "Downloading artifacts from ${RELEASE_URL}"
+          wget "${RELEASE_URL}/nats-k8s-oidc-callout-${CHART_VERSION}.tgz"
+          wget "${RELEASE_URL}/nats-k8s-oidc-callout-${CHART_VERSION}.tgz.prov"
+          wget "${RELEASE_URL}/nats-k8s-oidc-callout-${CHART_VERSION}.tgz.bundle"
+          wget "${RELEASE_URL}/helm-signing-key.${CHART_VERSION}.pub"
+
+          echo "Downloaded artifacts:"
+          ls -lah nats-k8s-oidc-callout-${CHART_VERSION}* helm-signing-key.${CHART_VERSION}.pub
+
+      - name: Verify GPG signature (Method 2)
+        run: |
+          CHART_VERSION="${{ steps.version.outputs.chart_version }}"
+
+          echo "Importing GPG public key..."
+          gpg --import helm-signing-key.${CHART_VERSION}.pub
+
+          echo "Verifying Helm chart with GPG signature..."
+          helm verify nats-k8s-oidc-callout-${CHART_VERSION}.tgz
+
+          echo "✅ GPG signature verification successful"
+
+      - name: Verify Cosign blob signature (Method 3)
+        run: |
+          CHART_VERSION="${{ steps.version.outputs.chart_version }}"
+
+          echo "Verifying chart tarball with Cosign..."
+          cosign verify-blob \
+            --bundle nats-k8s-oidc-callout-${CHART_VERSION}.tgz.bundle \
+            --certificate-identity-regexp="https://github.com/${{ github.repository }}/" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+            nats-k8s-oidc-callout-${CHART_VERSION}.tgz
+
+          echo "✅ Cosign blob signature verification successful"
+
+      - name: Verify OCI chart signature (Method 4)
+        run: |
+          CHART_VERSION="${{ steps.version.outputs.chart_version }}"
+
+          echo "Verifying OCI chart signature..."
+          cosign verify \
+            --certificate-identity-regexp="https://github.com/${{ github.repository }}/" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/charts/nats-k8s-oidc-callout:${CHART_VERSION}
+
+          echo "✅ OCI chart signature verification successful"
+
+      - name: Verify SLSA provenance attestation (Method 4)
+        run: |
+          CHART_VERSION="${{ steps.version.outputs.chart_version }}"
+
+          echo "Verifying SLSA provenance attestation..."
+          cosign verify-attestation \
+            --type slsaprovenance \
+            --certificate-identity-regexp="https://github.com/${{ github.repository }}/" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/charts/nats-k8s-oidc-callout:${CHART_VERSION}
+
+          echo "✅ SLSA provenance verification successful"
+
+      - name: Verification Summary
+        if: success()
+        run: |
+          echo "🎉 All verification methods passed successfully!"
+          echo ""
+          echo "✅ Method 2: GPG signature verification (native Helm)"
+          echo "✅ Method 3: Cosign blob signature verification"
+          echo "✅ Method 4a: OCI chart signature verification"
+          echo "✅ Method 4b: SLSA provenance attestation"
+          echo ""
+          echo "Release ${{ steps.version.outputs.calver_tag }} is fully verified and ready for use."
