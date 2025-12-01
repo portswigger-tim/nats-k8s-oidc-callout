@@ -445,6 +445,7 @@ jobs:
           ls -lah nats-k8s-oidc-callout-${CHART_VERSION}* helm-signing-key.${CHART_VERSION}.pub
 
       - name: Verify GPG signature (Method 2)
+        id: verify_gpg
         run: |
           CHART_VERSION="${{ steps.version.outputs.chart_version }}"
 
@@ -454,9 +455,11 @@ jobs:
           echo "Verifying Helm chart with GPG signature..."
           helm verify nats-k8s-oidc-callout-${CHART_VERSION}.tgz
 
+          echo "status=✅ Passed" >> $GITHUB_OUTPUT
           echo "✅ GPG signature verification successful"
 
       - name: Verify Cosign blob signature (Method 3)
+        id: verify_cosign_blob
         run: |
           CHART_VERSION="${{ steps.version.outputs.chart_version }}"
 
@@ -467,9 +470,11 @@ jobs:
             --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
             nats-k8s-oidc-callout-${CHART_VERSION}.tgz
 
+          echo "status=✅ Passed" >> $GITHUB_OUTPUT
           echo "✅ Cosign blob signature verification successful"
 
-      - name: Verify OCI chart signature (Method 4)
+      - name: Verify OCI chart signature (Method 4a)
+        id: verify_oci_signature
         run: |
           CHART_VERSION="${{ steps.version.outputs.chart_version }}"
 
@@ -479,9 +484,11 @@ jobs:
             --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/charts/nats-k8s-oidc-callout:${CHART_VERSION}
 
+          echo "status=✅ Passed" >> $GITHUB_OUTPUT
           echo "✅ OCI chart signature verification successful"
 
-      - name: Verify SLSA provenance attestation (Method 4)
+      - name: Verify SLSA provenance attestation (Method 4b)
+        id: verify_slsa_provenance
         run: |
           CHART_VERSION="${{ steps.version.outputs.chart_version }}"
 
@@ -492,16 +499,98 @@ jobs:
             --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/charts/nats-k8s-oidc-callout:${CHART_VERSION}
 
+          echo "status=✅ Passed" >> $GITHUB_OUTPUT
           echo "✅ SLSA provenance verification successful"
 
-      - name: Verification Summary
-        if: success()
+      - name: Generate Job Summary
+        if: always()
         run: |
-          echo "🎉 All verification methods passed successfully!"
-          echo ""
-          echo "✅ Method 2: GPG signature verification (native Helm)"
-          echo "✅ Method 3: Cosign blob signature verification"
-          echo "✅ Method 4a: OCI chart signature verification"
-          echo "✅ Method 4b: SLSA provenance attestation"
-          echo ""
-          echo "Release ${{ steps.version.outputs.calver_tag }} is fully verified and ready for use."
+          CHART_VERSION="${{ steps.version.outputs.chart_version }}"
+          CALVER_TAG="${{ steps.version.outputs.calver_tag }}"
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${CALVER_TAG}"
+
+          # Determine overall status
+          if [[ "${{ job.status }}" == "success" ]]; then
+            OVERALL_STATUS="✅ All Verifications Passed"
+            OVERALL_EMOJI="🎉"
+          else
+            OVERALL_STATUS="❌ Verification Failed"
+            OVERALL_EMOJI="⚠️"
+          fi
+
+          cat >> $GITHUB_STEP_SUMMARY <<EOF
+          # ${OVERALL_EMOJI} Release Verification Report
+
+          **Release:** [${CALVER_TAG}](${RELEASE_URL})
+          **Chart Version:** \`${CHART_VERSION}\`
+          **Status:** ${OVERALL_STATUS}
+
+          ## Verification Results
+
+          | Method | Description | Status |
+          |--------|-------------|--------|
+          | **Method 2** | GPG Signature (Helm Native) | ${{ steps.verify_gpg.outputs.status || '❌ Failed' }} |
+          | **Method 3** | Cosign Blob Signature | ${{ steps.verify_cosign_blob.outputs.status || '❌ Failed' }} |
+          | **Method 4a** | OCI Chart Signature | ${{ steps.verify_oci_signature.outputs.status || '❌ Failed' }} |
+          | **Method 4b** | SLSA Provenance Attestation | ${{ steps.verify_slsa_provenance.outputs.status || '❌ Failed' }} |
+
+          ## Release Artifacts
+
+          - 📦 [Helm Chart](${RELEASE_URL})
+          - 🔐 [GPG Public Key](${RELEASE_URL})
+          - 📝 [Provenance File (.prov)](${RELEASE_URL})
+          - 🔏 [Cosign Bundle](${RELEASE_URL})
+
+          ## OCI Registry
+
+          \`\`\`bash
+          helm install nats-k8s-oidc-callout oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/charts/nats-k8s-oidc-callout --version ${CHART_VERSION}
+          \`\`\`
+
+          ## Manual Verification
+
+          <details>
+          <summary>Click to expand verification commands</summary>
+
+          ### Method 2: GPG Signature
+          \`\`\`bash
+          wget ${RELEASE_URL}/nats-k8s-oidc-callout-${CHART_VERSION}.tgz
+          wget ${RELEASE_URL}/nats-k8s-oidc-callout-${CHART_VERSION}.tgz.prov
+          wget ${RELEASE_URL}/helm-signing-key.${CHART_VERSION}.pub
+          gpg --import helm-signing-key.${CHART_VERSION}.pub
+          helm verify nats-k8s-oidc-callout-${CHART_VERSION}.tgz
+          \`\`\`
+
+          ### Method 3: Cosign Blob
+          \`\`\`bash
+          wget ${RELEASE_URL}/nats-k8s-oidc-callout-${CHART_VERSION}.tgz
+          wget ${RELEASE_URL}/nats-k8s-oidc-callout-${CHART_VERSION}.tgz.bundle
+          cosign verify-blob \\
+            --bundle nats-k8s-oidc-callout-${CHART_VERSION}.tgz.bundle \\
+            --certificate-identity-regexp="https://github.com/${{ github.repository }}/" \\
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \\
+            nats-k8s-oidc-callout-${CHART_VERSION}.tgz
+          \`\`\`
+
+          ### Method 4a: OCI Signature
+          \`\`\`bash
+          cosign verify \\
+            --certificate-identity-regexp="https://github.com/${{ github.repository }}/" \\
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \\
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/charts/nats-k8s-oidc-callout:${CHART_VERSION}
+          \`\`\`
+
+          ### Method 4b: SLSA Provenance
+          \`\`\`bash
+          cosign verify-attestation \\
+            --type slsaprovenance \\
+            --certificate-identity-regexp="https://github.com/${{ github.repository }}/" \\
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \\
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/charts/nats-k8s-oidc-callout:${CHART_VERSION}
+          \`\`\`
+
+          </details>
+
+          ---
+          *Generated by [Release Verification Workflow](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})*
+          EOF
