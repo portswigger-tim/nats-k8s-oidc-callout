@@ -37,14 +37,139 @@ nsc add account --name AUTH_ACCOUNT
 # Generate credentials
 nsc generate creds --account AUTH_SERVICE --user auth-service > auth-service.creds
 
+# Extract the user's public NKEY (needed for NATS config)
+nsc describe user --account AUTH_SERVICE auth-service | grep "Issuer Key" | awk '{print $3}'
+# Output example: UAABC...XYZ (save this for step 3)
+
 # Create Kubernetes secret
 kubectl create namespace nats-auth
 kubectl create secret generic nats-auth-creds \
-  --from-file=auth.creds=auth-service.creds \
+  --from-file=credentials=auth-service.creds \
   --namespace=nats-auth
 ```
 
-### 3. Configure Kubernetes RBAC
+### 3. Configure NATS Server for Auth Callout
+
+Update your NATS Helm deployment to enable the authorization callout.
+
+**Note**: The auth service will connect using the credentials file (nkey-based authentication). The NATS server needs to know which user's public key to trust for signing authorization responses.
+
+```yaml
+# nats-auth-values.yaml
+config:
+  cluster:
+    enabled: true
+  jetstream:
+    enabled: true
+
+  # Merge custom authorization configuration
+  merge:
+    authorization:
+      # Define the auth service user with nkey authentication
+      users:
+        - nkey: "UAABC...XYZ"  # Public NKEY from step 2
+
+      # Auth callout configuration
+      auth_callout:
+        # Public NKEY that signs authorization responses (same as above)
+        issuer: "UAABC...XYZ"
+        # Users authorized to handle auth requests (reference by nkey)
+        auth_users: ["UAABC...XYZ"]
+```
+
+Apply the configuration:
+
+```bash
+# Upgrade NATS with auth callout enabled
+helm upgrade nats nats/nats \
+  --namespace nats \
+  --values nats-auth-values.yaml
+```
+
+**Alternative: Simple Password Authentication (Testing Only)**
+
+For testing/development, you can use simple password authentication like the E2E tests:
+
+```yaml
+# nats-auth-simple.yaml
+config:
+  cluster:
+    enabled: true
+  jetstream:
+    enabled: true
+
+  merge:
+    authorization:
+      # Simple password authentication (testing only)
+      users:
+        - user: "auth-service"
+          password: "auth-service-pass"
+
+      auth_callout:
+        # Public NKEY from step 2 that signs authorization responses
+        issuer: "UAABC...XYZ"
+        auth_users: ["auth-service"]
+```
+
+Then connect with: `nats://auth-service:auth-service-pass@nats.nats.svc:4222`
+
+#### With Operator/Resolver Mode (Recommended for Production)
+
+For operator-based JWT authentication:
+
+```yaml
+# nats-operator-values.yaml
+config:
+  cluster:
+    enabled: true
+  jetstream:
+    enabled: true
+
+  # Resolver for operator mode
+  resolver:
+    enabled: true
+    operator: /etc/nats-config/operator/operator.jwt
+    systemAccount: AUTH_SERVICE
+
+  # Authorization callout
+  merge:
+    authorization:
+      auth_callout:
+        # Public NKEY of auth-service user
+        issuer: "UAABC...XYZ"
+        # Auth service users from AUTH_SERVICE account
+        auth_users: ["auth-service"]
+        # Reference the AUTH_SERVICE account
+        account: "AUTH_SERVICE"
+
+# Mount operator JWT
+configMap:
+  operator:
+    operator.jwt: |
+      -----BEGIN NATS OPERATOR JWT-----
+      <your operator JWT from nsc describe operator -J>
+      -----END NATS OPERATOR JWT-----
+```
+
+Apply:
+```bash
+helm upgrade nats nats/nats \
+  --namespace nats \
+  --values nats-operator-values.yaml
+```
+
+#### Verify NATS Configuration
+
+```bash
+# Check NATS server logs for auth callout
+kubectl logs -n nats nats-0 | grep -i auth
+
+# Expected output:
+# [INF] Authorization callout enabled
+# [INF] Authorization users configured: 1
+```
+
+### 4. Configure Kubernetes RBAC
 
 ```yaml
 # rbac.yaml
@@ -83,7 +208,7 @@ Apply:
 kubectl apply -f rbac.yaml
 ```
 
-### 4. Deploy Auth Service
+### 5. Deploy Auth Service
 
 ```yaml
 # deployment.yaml
@@ -113,7 +238,7 @@ spec:
             - name: NATS_URL
               value: "nats://nats.nats.svc.cluster.local:4222"
             - name: NATS_CREDS_FILE
-              value: "/etc/nats/auth.creds"
+              value: "/etc/nats/credentials"
             - name: NATS_ACCOUNT
               value: "AUTH_ACCOUNT"
             - name: K8S_IN_CLUSTER
@@ -149,6 +274,9 @@ spec:
         - name: nats-creds
           secret:
             secretName: nats-auth-creds
+            items:
+              - key: credentials
+                path: credentials
 ---
 apiVersion: v1
 kind: Service
@@ -170,7 +298,7 @@ Apply:
 kubectl apply -f deployment.yaml
 ```
 
-### 5. Configure Client ServiceAccount
+### 6. Configure Client ServiceAccount
 
 ```yaml
 # client-sa.yaml
