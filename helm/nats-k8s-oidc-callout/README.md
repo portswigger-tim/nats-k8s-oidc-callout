@@ -180,6 +180,21 @@ helm install nats-k8s-oidc-callout ./helm/nats-k8s-oidc-callout \
 | jwt.issuer | string | `https://kubernetes.default.svc` (in-cluster) | JWT issuer for token validation |
 | jwt.jwksUrl | string | `https://kubernetes.default.svc/openid/v1/jwks` (in-cluster) | JWKS URL for JWT validation |
 | logLevel | string | `"info"` | Log level (debug, info, warn, error) |
+| logs.podLogs.annotations | object | `{}` | Additional annotations for PodLogs |
+| logs.podLogs.enabled | bool | `false` | Enable PodLogs creation for Grafana Agent Operator |
+| logs.podLogs.labels | object | `{}` | Additional labels for PodLogs |
+| logs.podLogs.namespace | string | `""` | Target namespace for PodLogs (defaults to release namespace) |
+| logs.podLogs.pipelineStages | list | `[{"cri": {}}]` (CRI log format parser) | Pipeline stages for log processing |
+| logs.podLogs.relabelings | list | `[]` | RelabelConfigs to apply to logs before ingestion |
+| metrics.podMonitor.annotations | object | `{}` | Additional annotations for PodMonitor |
+| metrics.podMonitor.enabled | bool | `false` | Enable PodMonitor creation for Prometheus Operator |
+| metrics.podMonitor.interval | string | `""` | Scrape interval (e.g., 30s, 1m) |
+| metrics.podMonitor.labels | object | `{}` | Additional labels for PodMonitor |
+| metrics.podMonitor.metricRelabelings | list | `[]` | MetricRelabelConfigs to apply to samples before ingestion |
+| metrics.podMonitor.namespace | string | `""` | Target namespace for PodMonitor (defaults to release namespace) |
+| metrics.podMonitor.path | string | `/metrics` | Metrics path |
+| metrics.podMonitor.relabelings | list | `[]` | RelabelConfigs to apply to samples before scraping |
+| metrics.podMonitor.scrapeTimeout | string | `""` | Scrape timeout (e.g., 10s) |
 | nats.account | string | `""` | NATS account name for the auth callout service (REQUIRED) |
 | nats.credentials.content | string | `""` | Content of the credentials file (required if create=true). Use `--set-file nats.credentials.content=path/to/file` |
 | nats.credentials.create | bool | `false` | Create a new secret for NATS credentials |

@@ -128,6 +128,71 @@ networkPolicy:
   #     matchLabels:
   #       app: nats
 
+metrics:
+  podMonitor:
+    # -- Enable PodMonitor creation for Prometheus Operator
+    enabled: false
+
+    # -- Target namespace for PodMonitor (defaults to release namespace)
+    namespace: ""
+
+    # -- Additional labels for PodMonitor
+    labels: {}
+
+    # -- Additional annotations for PodMonitor
+    annotations: {}
+
+    # -- Metrics path
+    # @default -- `/metrics`
+    path: /metrics
+
+    # -- Scrape interval (e.g., 30s, 1m)
+    interval: ""
+
+    # -- Scrape timeout (e.g., 10s)
+    scrapeTimeout: ""
+
+    # -- RelabelConfigs to apply to samples before scraping
+    relabelings: []
+    # - sourceLabels: [__meta_kubernetes_pod_node_name]
+    #   targetLabel: node
+
+    # -- MetricRelabelConfigs to apply to samples before ingestion
+    metricRelabelings: []
+    # - sourceLabels: [__name__]
+    #   regex: '(go_.*)'
+    #   action: drop
+
+logs:
+  podLogs:
+    # -- Enable PodLogs creation for Grafana Agent Operator
+    enabled: false
+
+    # -- Target namespace for PodLogs (defaults to release namespace)
+    namespace: ""
+
+    # -- Additional labels for PodLogs
+    labels: {}
+
+    # -- Additional annotations for PodLogs
+    annotations: {}
+
+    # -- Pipeline stages for log processing
+    # @default -- `[{"cri": {}}]` (CRI log format parser)
+    pipelineStages: []
+    # - cri: {}
+    # - json:
+    #     expressions:
+    #       level: level
+    #       msg: msg
+    # - labels:
+    #     level:
+
+    # -- RelabelConfigs to apply to logs before ingestion
+    relabelings: []
+    # - sourceLabels: [__meta_kubernetes_pod_node_name]
+    #   targetLabel: node
+
 # -- Additional Kubernetes objects to deploy (e.g., ConfigMaps, Secrets, etc.)
 # Supports templating with `tpl` function
 extraObjects: []

@@ -1,0 +1,32 @@
+{{- if .Values.logs.podLogs.enabled }}
+apiVersion: monitoring.grafana.com/v1alpha1
+kind: PodLogs
+metadata:
+  name: {{ include "nats-k8s-oidc-callout.fullname" . }}
+  {{- if .Values.logs.podLogs.namespace }}
+  namespace: {{ .Values.logs.podLogs.namespace }}
+  {{- end }}
+  labels:
+    {{- include "nats-k8s-oidc-callout.labels" . | nindent 4 }}
+    {{- with .Values.logs.podLogs.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.logs.podLogs.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "nats-k8s-oidc-callout.selectorLabels" . | nindent 6 }}
+  pipelineStages:
+    {{- if .Values.logs.podLogs.pipelineStages }}
+    {{- toYaml .Values.logs.podLogs.pipelineStages | nindent 4 }}
+    {{- else }}
+    - cri: {}
+    {{- end }}
+  {{- with .Values.logs.podLogs.relabelings }}
+  relabelings:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
