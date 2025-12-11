@@ -449,6 +449,7 @@ jobs:
       - name: Setup Helm
         uses: mamezou-tech/setup-helmfile@v2.1.0
         with:
+          install-helm-plugins: no
           install-kubectl: no
 
       - name: Set version variables
