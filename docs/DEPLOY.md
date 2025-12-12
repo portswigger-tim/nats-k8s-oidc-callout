@@ -689,6 +689,96 @@ kubectl logs -n nats nats-0 | grep -E "operator|resolver|system|account"
 # - Authorization callout enabled
 ```
 
+#### 3a. Configure natsBox Contexts (Optional but Recommended)
+
+The NATS Helm chart includes a `natsBox` pod with the NATS CLI pre-installed. You can configure persistent CLI contexts for easy debugging and testing:
+
+```yaml
+# Add to your nats-values-with-nack.yaml
+natsBox:
+  enabled: true
+
+  # Configure contexts with credentials
+  contexts:
+    # System context (for administrative operations)
+    system:
+      creds:
+        secretName: nats-sys-creds
+        key: sys.creds
+      merge:
+        description: "System account for NATS administration"
+
+    # Auth service context (for testing auth callout)
+    auth-service:
+      creds:
+        secretName: nats-auth-service-creds
+        key: auth-service.creds
+      merge:
+        description: "Auth service account"
+
+    # NACK context (for JetStream management)
+    nack:
+      creds:
+        secretName: nack-nats-creds
+        key: nack.creds
+      merge:
+        description: "NACK controller account"
+
+  # Set default context
+  defaultContextName: system
+```
+
+**Create secrets for natsBox contexts:**
+
+```bash
+# Create system credentials secret
+kubectl create secret generic nats-sys-creds \
+  --namespace nats \
+  --from-file=sys.creds=./sys-user.creds
+
+# Create auth service credentials secret
+kubectl create secret generic nats-auth-service-creds \
+  --namespace nats \
+  --from-file=auth-service.creds=./auth-service.creds
+
+# Create NACK credentials secret (if using NACK)
+kubectl create secret generic nack-nats-creds \
+  --namespace nats \
+  --from-file=nack.creds=./nack-controller.creds
+```
+
+**Using natsBox contexts:**
+
+```bash
+# Access natsBox pod
+kubectl exec -it -n nats deployment/nats-box -- sh
+
+# List available contexts
+nats context ls
+
+# Select a context
+nats context select system
+
+# Test connection
+nats account info
+
+# Switch to NACK context
+nats context select nack
+
+# List JetStream streams
+nats stream ls
+
+# Test with auth service context
+nats context select auth-service
+nats pub '$SYS.REQ.USER.AUTH' '{"user_nkey":"UABC...XYZ"}'
+```
+
+**Benefits of natsBox contexts:**
+- ✅ Pre-configured connections persist across pod restarts
+- ✅ Easy switching between accounts for testing
+- ✅ No need to remember connection strings or credential paths
+- ✅ Useful for debugging auth callout and JetStream operations
+
 #### 4. Deploy NACK Controller
 
 ```bash
