@@ -706,6 +706,7 @@ natsBox:
         secretName: nats-sys-creds
         key: sys.creds
       merge:
+        url: nats://nats.nats.svc.cluster.local:4222
         description: "System account for NATS administration"
 
     # Auth service context (for testing auth callout)
@@ -714,6 +715,7 @@ natsBox:
         secretName: nats-auth-service-creds
         key: auth-service.creds
       merge:
+        url: nats://nats.nats.svc.cluster.local:4222
         description: "Auth service account"
 
     # NACK context (for JetStream management)
@@ -722,11 +724,30 @@ natsBox:
         secretName: nack-nats-creds
         key: nack.creds
       merge:
+        url: nats://nats.nats.svc.cluster.local:4222
         description: "NACK controller account"
 
-  # Set default context
+  # Set default context - system account is recommended for admin tasks
   defaultContextName: system
 ```
+
+**Configuration Notes:**
+
+**Default Context (`defaultContextName: system`):**
+- The `system` context uses the SYS account, which has administrative privileges
+- This is the recommended default for natsBox since it's used for debugging and admin tasks
+- When you `kubectl exec` into natsBox, you'll automatically use the system context
+- You can still switch to other contexts as needed: `nats context select auth-service`
+
+**Alternative Default Options:**
+- `defaultContextName: auth-service` - If primarily testing auth callout
+- `defaultContextName: nack` - If primarily working with JetStream
+
+**URL Configuration:**
+- The `url` field specifies the NATS server connection string
+- Use the Kubernetes service DNS name: `nats://nats.nats.svc.cluster.local:4222`
+- Adjust the namespace (`nats`) if your NATS deployment is in a different namespace
+- For external access, you might use a different URL (LoadBalancer IP, Ingress, etc.)
 
 **Create secrets for natsBox contexts:**
 
