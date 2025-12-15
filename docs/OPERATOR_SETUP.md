@@ -75,8 +75,8 @@ nsc list operators
 # Create SYS account
 nsc add account SYS
 
-# Mark as system account
-nsc edit account SYS --sk system
+# Mark SYS as the system account
+nsc edit operator --system-account SYS
 
 # Create system user
 nsc add user --account SYS sys-user
@@ -428,10 +428,10 @@ nats --creds=auth-service.creds server check
 
 ```bash
 # Verify which account is marked as system account
-nsc describe account SYS | grep "Signing Keys"
+nsc describe operator | grep "System Account"
 
-# If not marked, add system flag
-nsc edit account SYS --sk system
+# If not marked, set system account on operator
+nsc edit operator --system-account SYS
 ```
 
 ### JWT Resolver Not Finding Accounts
