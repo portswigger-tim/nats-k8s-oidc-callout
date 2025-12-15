@@ -11,8 +11,8 @@ Guide for integrating NACK (NATS JetStream Controller) with the auth callout ser
 ```
 ┌─────────────────────────────────────────────┐
 │ NATS Server                                 │
-│ ├─ Account: NACK (NACK's credentials)      │
-│ ├─ Account: DEFAULT (auth callout enabled) │
+│ ├─ Account: NACK (NACK's credentials)       │
+│ ├─ Account: DEFAULT (auth callout enabled)  │
 └─────────────────────────────────────────────┘
          ↑                    ↑
          │                    │
