@@ -325,7 +325,7 @@ kubectl logs -n nats-system -l app.kubernetes.io/name=nats-k8s-oidc-callout
 ### Check health
 ```bash
 kubectl port-forward -n nats-system svc/nats-k8s-oidc-callout 8080:8080
-curl http://localhost:8080/healthz
+curl http://localhost:8080/health
 ```
 
 ----------------------------------------------

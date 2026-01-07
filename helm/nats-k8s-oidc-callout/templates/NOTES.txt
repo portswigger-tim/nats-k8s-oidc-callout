@@ -6,7 +6,7 @@
 
 3. Check health:
   kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "nats-k8s-oidc-callout.fullname" . }} 8080:8080
-  curl http://localhost:8080/healthz
+  curl http://localhost:8080/health
 
 4. View metrics:
   curl http://localhost:8080/metrics

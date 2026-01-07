@@ -342,7 +342,7 @@ kubectl logs -n nats-auth -l app.kubernetes.io/name=nats-k8s-oidc-callout
 
 # Check health endpoint
 kubectl port-forward -n nats-auth svc/nats-k8s-oidc-callout 8080:8080
-curl http://localhost:8080/healthz
+curl http://localhost:8080/health
 # Expected: {"status":"ok"}
 ```
 
