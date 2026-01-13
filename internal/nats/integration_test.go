@@ -87,7 +87,7 @@ authorization {
 	// Create logger for integration test
 	logger := zap.NewNop()
 
-	// Create and start our auth callout client with credentials
+	// Create and start our auth callout client without credentials file (using URL-based auth)
 	client, err := NewClient(natsURL, "", authHandler, logger)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)

@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -39,9 +40,38 @@ type Client struct {
 	logger      *zap.Logger
 }
 
-// NewClient creates a new NATS auth callout client
-// The signing key will be loaded from the credentials file during Start()
+// NewClient creates a new NATS auth callout client.
+//
+// Authentication Strategy:
+// The client supports two NATS authentication methods:
+//  1. User credentials file (recommended): Pass a non-empty credsFile path.
+//     The file will be used for NATS connection authentication via UserCredentials().
+//  2. Username/password: Include credentials in the NATS URL (nats://user:pass@host:port).
+//     Pass an empty credsFile ("") to skip credential file authentication.
+//
+// If both methods are provided, the credentials file takes precedence in the NATS client.
+// The signing key must be loaded separately using SetSigningKey() before calling Start().
 func NewClient(url string, credsFile string, authHandler AuthHandler, logger *zap.Logger) (*Client, error) {
+	// Validate credentials file if provided
+	if credsFile != "" {
+		// Clean and validate the path to prevent path traversal attacks
+		cleanPath := filepath.Clean(credsFile)
+		if cleanPath != credsFile {
+			return nil, fmt.Errorf("invalid credentials file path: potential path traversal attempt")
+		}
+
+		// Check if file exists and is accessible
+		fileInfo, err := os.Stat(credsFile)
+		if err != nil {
+			return nil, fmt.Errorf("credentials file validation failed: %w", err)
+		}
+
+		// Verify it's a regular file (not a directory or special file)
+		if !fileInfo.Mode().IsRegular() {
+			return nil, fmt.Errorf("credentials file is not a regular file: %s", credsFile)
+		}
+	}
+
 	return &Client{
 		url:         url,
 		credsFile:   credsFile,
@@ -62,14 +92,25 @@ func (c *Client) Start(ctx context.Context) error {
 		return fmt.Errorf("signing key not set; call SetSigningKey() before Start()")
 	}
 
-	// Connect to NATS with timeout
-	conn, err := natsclient.Connect(c.url,
-		natsclient.UserCredentials(c.credsFile),
-		natsclient.Timeout(5*time.Second),
+	// Build connection options
+	opts := []natsclient.Option{
+		natsclient.Timeout(5 * time.Second),
 		natsclient.Name("nats-k8s-oidc-callout"),
-	)
+	}
+
+	// Add credentials file authentication if provided
+	if c.credsFile != "" {
+		c.logger.Debug("using credentials file for NATS authentication",
+			zap.String("creds_file", c.credsFile))
+		opts = append(opts, natsclient.UserCredentials(c.credsFile))
+	} else {
+		c.logger.Debug("using URL-based authentication for NATS (no credentials file)")
+	}
+
+	// Connect to NATS
+	conn, err := natsclient.Connect(c.url, opts...)
 	if err != nil {
-		return fmt.Errorf("failed to connect to NATS: %w", err)
+		return fmt.Errorf("failed to connect to NATS (url=%s, creds=%s): %w", c.url, c.credsFile, err)
 	}
 	c.conn = conn
 

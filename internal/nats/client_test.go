@@ -2,6 +2,8 @@ package nats
 
 import (
 	"context"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -463,4 +465,139 @@ func contains(list jwt.StringList, s string) bool {
 		}
 	}
 	return false
+}
+
+// TestClient_WithValidCredentialsFile tests creating a client with a valid credentials file
+func TestClient_WithValidCredentialsFile(t *testing.T) {
+	// Create a temporary credentials file
+	credsFile, err := os.CreateTemp("", "test-creds-*.creds")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(credsFile.Name())
+
+	// Write valid credentials content
+	credsContent := `-----BEGIN NATS USER JWT-----
+eyJ0eXAiOiJKV1QiLCJhbGciOiJlZDI1NTE5LW5rZXkifQ.test
+------END NATS USER JWT------
+
+-----BEGIN USER NKEY SEED-----
+SUAAVVV6MJIGCPXSBFF7P5IPJYLNE3IYINMPIZTQZZ6M4G6HBIVZM
+------END USER NKEY SEED------
+`
+	if _, err := credsFile.WriteString(credsContent); err != nil {
+		t.Fatalf("Failed to write credentials: %v", err)
+	}
+	credsFile.Close()
+
+	// Set proper permissions
+	if err := os.Chmod(credsFile.Name(), 0600); err != nil {
+		t.Fatalf("Failed to set permissions: %v", err)
+	}
+
+	logger := zap.NewNop()
+	authHandler := &mockAuthHandler{}
+
+	// Should succeed with valid credentials file
+	client, err := NewClient("nats://localhost:4222", credsFile.Name(), authHandler, logger)
+	if err != nil {
+		t.Fatalf("Failed to create client with valid credentials: %v", err)
+	}
+
+	if client == nil {
+		t.Fatal("Client should not be nil")
+	}
+
+	if client.credsFile != credsFile.Name() {
+		t.Errorf("Client credsFile = %q, want %q", client.credsFile, credsFile.Name())
+	}
+}
+
+// TestClient_WithInvalidCredentialsFile tests validation of invalid credentials files
+func TestClient_WithInvalidCredentialsFile(t *testing.T) {
+	logger := zap.NewNop()
+	authHandler := &mockAuthHandler{}
+
+	tests := []struct {
+		name      string
+		credsFile string
+		wantErr   string
+	}{
+		{
+			name:      "Non-existent file",
+			credsFile: "/tmp/nonexistent-file-12345.creds",
+			wantErr:   "credentials file validation failed",
+		},
+		{
+			name:      "Directory instead of file",
+			credsFile: os.TempDir(),
+			wantErr:   "not a regular file",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := NewClient("nats://localhost:4222", tt.credsFile, authHandler, logger)
+
+			if err == nil {
+				t.Errorf("Expected error containing %q, got nil", tt.wantErr)
+			} else if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("Expected error containing %q, got %q", tt.wantErr, err.Error())
+			}
+
+			if client != nil {
+				t.Error("Client should be nil on error")
+			}
+		})
+	}
+}
+
+// TestClient_PathTraversalProtection tests that path traversal attempts are detected
+func TestClient_PathTraversalProtection(t *testing.T) {
+	logger := zap.NewNop()
+	authHandler := &mockAuthHandler{}
+
+	// Paths that contain .. and would be cleaned differently
+	suspiciousPaths := []string{
+		"/tmp/../etc/passwd",
+		"./config/../../../etc/hosts",
+		"creds/../../sensitive.creds",
+	}
+
+	for _, path := range suspiciousPaths {
+		t.Run(path, func(t *testing.T) {
+			client, err := NewClient("nats://localhost:4222", path, authHandler, logger)
+
+			// These paths will fail validation either due to:
+			// 1. Path traversal detection (if cleaned path != original)
+			// 2. File not found (if they happen to be equivalent)
+			if err == nil {
+				t.Errorf("Expected error for suspicious path %q, got nil", path)
+			}
+
+			if client != nil {
+				t.Error("Client should be nil on error")
+			}
+		})
+	}
+}
+
+// TestClient_WithEmptyCredentialsFile tests that empty credentials file is valid (URL-based auth)
+func TestClient_WithEmptyCredentialsFile(t *testing.T) {
+	logger := zap.NewNop()
+	authHandler := &mockAuthHandler{}
+
+	// Should succeed with empty credentials file (URL-based auth)
+	client, err := NewClient("nats://user:pass@localhost:4222", "", authHandler, logger)
+	if err != nil {
+		t.Fatalf("Failed to create client with empty credentials: %v", err)
+	}
+
+	if client == nil {
+		t.Fatal("Client should not be nil")
+	}
+
+	if client.credsFile != "" {
+		t.Errorf("Client credsFile should be empty, got %q", client.credsFile)
+	}
 }

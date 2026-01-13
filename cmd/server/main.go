@@ -103,17 +103,21 @@ func startK8sInformers(factory informers.SharedInformerFactory, stopCh chan stru
 // initNATSClient initializes the NATS client with signing key configuration.
 func initNATSClient(cfg *config.Config, authHandler *auth.Handler, logger *zap.Logger) (*nats.Client, error) {
 	// Create NATS client with credentials file path
-	logger.Info("initializing NATS client", zap.String("url", cfg.NatsURL))
+	logger.Info("initializing NATS client",
+		zap.String("url", cfg.NatsURL),
+		zap.String("creds_file", cfg.NatsCredsFile))
 	natsClient, err := nats.NewClient(cfg.NatsURL, cfg.NatsCredsFile, authHandler, logger)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create NATS client: %w", err)
+		return nil, fmt.Errorf("failed to create NATS client (url=%s, creds=%s): %w",
+			cfg.NatsURL, cfg.NatsCredsFile, err)
 	}
 
 	// Load signing key from credentials file
 	logger.Info("loading signing key from credentials", zap.String("creds_file", cfg.NatsCredsFile))
 	signingKey, err := nats.LoadSigningKeyFromCredsFile(cfg.NatsCredsFile)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load signing key from credentials: %w", err)
+		return nil, fmt.Errorf("failed to load signing key from credentials file %s: %w",
+			cfg.NatsCredsFile, err)
 	}
 	natsClient.SetSigningKey(signingKey)
 
