@@ -51,7 +51,7 @@ type Client struct {
 //
 // If both methods are provided, the credentials file takes precedence in the NATS client.
 // The signing key must be loaded separately using SetSigningKey() before calling Start().
-func NewClient(url string, credsFile string, authHandler AuthHandler, logger *zap.Logger) (*Client, error) {
+func NewClient(url, credsFile string, authHandler AuthHandler, logger *zap.Logger) (*Client, error) {
 	// Validate credentials file if provided
 	if credsFile != "" {
 		// Clean and validate the path to prevent path traversal attacks

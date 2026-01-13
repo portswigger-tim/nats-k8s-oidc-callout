@@ -6,7 +6,7 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -w -s -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)
 
-.PHONY: test test-unit test-integration test-e2e test-helm test-all coverage clean
+.PHONY: test test-unit test-integration test-e2e test-helm test-all coverage lint clean
 .PHONY: build build-all build-amd64 build-arm64 docker-build docker-push version help
 
 # Default target
@@ -47,6 +47,12 @@ test-all: test-unit test-integration test-e2e test-helm
 coverage:
 	@echo "Running tests with coverage..."
 	go test -cover ./...
+
+# Run linter (requires golangci-lint)
+lint:
+	@echo "Running golangci-lint..."
+	@command -v golangci-lint >/dev/null 2>&1 || { echo "Error: golangci-lint is not installed. Install: https://golangci-lint.run/usage/install/"; exit 1; }
+	golangci-lint run --timeout=5m
 
 # Run tests with verbose output
 test-verbose:
@@ -145,6 +151,7 @@ help:
 	@echo "  test-helm     - Run Helm unit tests (requires helm-unittest plugin)"
 	@echo "  test-all      - Run all tests (unit + integration + e2e + helm)"
 	@echo "  coverage      - Run tests with coverage"
+	@echo "  lint          - Run golangci-lint (requires golangci-lint)"
 	@echo ""
 	@echo "Helm targets:"
 	@echo "  helm-docs     - Generate Helm chart documentation"
