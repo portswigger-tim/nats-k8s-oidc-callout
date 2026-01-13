@@ -30,7 +30,7 @@ func TestClient_Create(t *testing.T) {
 		},
 	}
 
-	client, err := NewClient("nats://localhost:4222", authHandler, logger)
+	client, err := NewClient("nats://localhost:4222", "", authHandler, logger)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestClient_AuthorizerFunction(t *testing.T) {
 				authorizeFunc: tt.authHandler,
 			}
 
-			client, err := NewClient("nats://localhost:4222", authHandler, logger)
+			client, err := NewClient("nats://localhost:4222", "", authHandler, logger)
 			if err != nil {
 				t.Fatalf("Failed to create client: %v", err)
 			}
@@ -344,7 +344,7 @@ func TestClient_NewClient(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			logger := zap.NewNop()
-			client, err := NewClient(tt.url, authHandler, logger)
+			client, err := NewClient(tt.url, "", authHandler, logger)
 
 			if tt.wantErr && err == nil {
 				t.Error("Expected error but got none")

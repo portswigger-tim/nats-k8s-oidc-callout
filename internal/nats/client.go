@@ -31,6 +31,7 @@ type AuthHandler interface {
 // Client manages NATS connection and auth callout subscription
 type Client struct {
 	url         string
+	credsFile   string
 	authHandler AuthHandler
 	conn        *natsclient.Conn
 	service     *callout.AuthorizationService
@@ -40,9 +41,10 @@ type Client struct {
 
 // NewClient creates a new NATS auth callout client
 // The signing key will be loaded from the credentials file during Start()
-func NewClient(url string, authHandler AuthHandler, logger *zap.Logger) (*Client, error) {
+func NewClient(url string, credsFile string, authHandler AuthHandler, logger *zap.Logger) (*Client, error) {
 	return &Client{
 		url:         url,
+		credsFile:   credsFile,
 		authHandler: authHandler,
 		logger:      logger,
 	}, nil
@@ -62,6 +64,7 @@ func (c *Client) Start(ctx context.Context) error {
 
 	// Connect to NATS with timeout
 	conn, err := natsclient.Connect(c.url,
+		natsclient.UserCredentials(c.credsFile),
 		natsclient.Timeout(5*time.Second),
 		natsclient.Name("nats-k8s-oidc-callout"),
 	)

@@ -15,7 +15,7 @@ Auth handler → Build user claims → Sign JWT → Return to NATS
 ## Usage
 
 ```go
-client, err := nats.NewClient("nats://localhost:4222", authHandler)
+client, err := nats.NewClient("nats://localhost:4222", "/path/to/creds", authHandler, logger)
 client.Start(ctx)
 defer client.Shutdown(ctx)
 ```

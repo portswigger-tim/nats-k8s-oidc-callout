@@ -88,7 +88,7 @@ authorization {
 	logger := zap.NewNop()
 
 	// Create and start our auth callout client with credentials
-	client, err := NewClient(natsURL, authHandler, logger)
+	client, err := NewClient(natsURL, "", authHandler, logger)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
