@@ -268,7 +268,7 @@ func LoadSigningKeyFromFile(path string) (nkeys.KeyPair, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to open signing key file: %w", err)
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }() // Error intentionally ignored - file opened read-only
 
 		seed, err = extractSeedFromFile(file)
 		if err != nil {
