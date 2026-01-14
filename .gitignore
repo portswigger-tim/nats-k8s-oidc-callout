@@ -37,5 +37,16 @@ go.work.sum
 .env
 
 # Editor/IDE
-# .idea/
+.idea/
 # .vscode/
+
+# Local development secrets and credentials
+# NEVER commit these files - they contain sensitive cryptographic material
+local-dev/signing.key          # Account signing key (SA...)
+local-dev/*.key                # Any other key files
+local-dev/*.creds              # NATS credentials files
+local-dev/kubeconfig.yaml      # Kubernetes credentials
+local-dev/jwks.json            # JWKS (may contain sensitive key material)
+local-dev/*.pem                # Certificate files
+local-dev/*.p12                # Certificate bundles
+local-dev/*.pfx                # Certificate bundles

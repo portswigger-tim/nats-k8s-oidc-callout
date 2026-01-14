@@ -52,3 +52,18 @@ e2e_test.go
 # Go workspace
 go.work
 go.work.sum
+
+# Local development secrets and credentials
+# NEVER include these in Docker images
+local-dev/signing.key
+local-dev/*.key
+local-dev/*.creds
+local-dev/kubeconfig.yaml
+local-dev/jwks.json
+local-dev/*.pem
+local-dev/*.p12
+local-dev/*.pfx
+
+# Docker Compose files (not needed in image)
+docker-compose.yml
+docker-compose.*.yml

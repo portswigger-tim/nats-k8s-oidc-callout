@@ -32,7 +32,8 @@ type AuthHandler interface {
 // Client manages NATS connection and auth callout subscription
 type Client struct {
 	url         string
-	credsFile   string
+	credsFile   string // User credentials file (optional)
+	token       string // Token for authentication (optional)
 	authHandler AuthHandler
 	conn        *natsclient.Conn
 	service     *callout.AuthorizationService
@@ -43,38 +44,46 @@ type Client struct {
 // NewClient creates a new NATS auth callout client.
 //
 // Authentication Strategy:
-// The client supports two NATS authentication methods:
-//  1. User credentials file (recommended): Pass a non-empty credsFile path.
-//     The file will be used for NATS connection authentication via UserCredentials().
-//  2. Username/password: Include credentials in the NATS URL (nats://user:pass@host:port).
-//     Pass an empty credsFile ("") to skip credential file authentication.
+// The client supports three NATS connection authentication methods:
+//  1. URL-embedded credentials (simplest): nats://user:pass@host:port
+//     Pass empty userCredsFile and empty token.
+//  2. User credentials file (production): Separate .creds file with user JWT + user key
+//     Pass non-empty userCredsFile path, empty token.
+//  3. Token authentication: Static token for connection
+//     Pass empty userCredsFile, non-empty token.
 //
-// If both methods are provided, the credentials file takes precedence in the NATS client.
 // The signing key must be loaded separately using SetSigningKey() before calling Start().
-func NewClient(url, credsFile string, authHandler AuthHandler, logger *zap.Logger) (*Client, error) {
-	// Validate credentials file if provided
-	if credsFile != "" {
+// The signing key is used to sign authorization response JWTs and must be an account private key.
+func NewClient(url, userCredsFile, token string, authHandler AuthHandler, logger *zap.Logger) (*Client, error) {
+	// Validate user credentials file if provided
+	if userCredsFile != "" {
 		// Clean and validate the path to prevent path traversal attacks
-		cleanPath := filepath.Clean(credsFile)
-		if cleanPath != credsFile {
-			return nil, fmt.Errorf("invalid credentials file path: potential path traversal attempt")
+		cleanPath := filepath.Clean(userCredsFile)
+		if cleanPath != userCredsFile {
+			return nil, fmt.Errorf("invalid user credentials file path: potential path traversal attempt")
 		}
 
 		// Check if file exists and is accessible
-		fileInfo, err := os.Stat(credsFile)
+		fileInfo, err := os.Stat(userCredsFile)
 		if err != nil {
-			return nil, fmt.Errorf("credentials file validation failed: %w", err)
+			return nil, fmt.Errorf("user credentials file validation failed: %w", err)
 		}
 
 		// Verify it's a regular file (not a directory or special file)
 		if !fileInfo.Mode().IsRegular() {
-			return nil, fmt.Errorf("credentials file is not a regular file: %s", credsFile)
+			return nil, fmt.Errorf("user credentials file is not a regular file: %s", userCredsFile)
 		}
+	}
+
+	// Validate mutually exclusive auth methods
+	if userCredsFile != "" && token != "" {
+		return nil, fmt.Errorf("userCredsFile and token are mutually exclusive; provide at most one")
 	}
 
 	return &Client{
 		url:         url,
-		credsFile:   credsFile,
+		credsFile:   userCredsFile, // User credentials file (optional)
+		token:       token,
 		authHandler: authHandler,
 		logger:      logger,
 	}, nil
@@ -98,19 +107,23 @@ func (c *Client) Start(ctx context.Context) error {
 		natsclient.Name("nats-k8s-oidc-callout"),
 	}
 
-	// Add credentials file authentication if provided
+	// Add authentication based on configured method
+	// Priority: User credentials > Token > URL-embedded credentials
 	if c.credsFile != "" {
-		c.logger.Debug("using credentials file for NATS authentication",
-			zap.String("creds_file", c.credsFile))
+		c.logger.Info("using user credentials file for NATS authentication",
+			zap.String("user_creds_file", c.credsFile))
 		opts = append(opts, natsclient.UserCredentials(c.credsFile))
+	} else if c.token != "" {
+		c.logger.Info("using token for NATS authentication")
+		opts = append(opts, natsclient.Token(c.token))
 	} else {
-		c.logger.Debug("using URL-based authentication for NATS (no credentials file)")
+		c.logger.Info("using URL-embedded credentials for NATS authentication (username/password in URL)")
 	}
 
 	// Connect to NATS
 	conn, err := natsclient.Connect(c.url, opts...)
 	if err != nil {
-		return fmt.Errorf("failed to connect to NATS (url=%s, creds=%s): %w", c.url, c.credsFile, err)
+		return fmt.Errorf("failed to connect to NATS (url=%s, user_creds_file=%s): %w", c.url, c.credsFile, err)
 	}
 	c.conn = conn
 
@@ -222,6 +235,68 @@ func (c *Client) Shutdown(ctx context.Context) error {
 	return nil
 }
 
+// LoadSigningKeyFromFile loads an account signing key from a file.
+//
+// The file can be in one of two formats:
+//  1. Plain seed format: Just the account seed (SA...) on a single line
+//  2. NATS credentials format: Standard credentials file with seed section
+//
+// This function is designed to load ACCOUNT signing keys (starting with SA...),
+// not user keys (SU...). Account keys are used to sign authorization response JWTs.
+//
+// Example plain seed file:
+//
+//	SAADGYQZI2OIVEXAMPLE...
+//
+// Example credentials format:
+//
+//	-----BEGIN NKEY SEED-----
+//	SAADGYQZI2OIVEXAMPLE...
+//	------END NKEY SEED------
+func LoadSigningKeyFromFile(path string) (nkeys.KeyPair, error) {
+	data, err := os.ReadFile(path) //nolint:gosec // path comes from configuration
+	if err != nil {
+		return nil, fmt.Errorf("failed to read signing key file: %w", err)
+	}
+
+	// Try to extract seed from data
+	seed := strings.TrimSpace(string(data))
+
+	// If it looks like a credentials file format, extract the seed section
+	if strings.Contains(seed, "BEGIN") {
+		file, err := os.Open(path) //nolint:gosec // path comes from configuration
+		if err != nil {
+			return nil, fmt.Errorf("failed to open signing key file: %w", err)
+		}
+		defer file.Close()
+
+		seed, err = extractSeedFromFile(file)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Parse the seed into a KeyPair
+	kp, err := nkeys.FromSeed([]byte(seed))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse signing key: %w", err)
+	}
+
+	// Verify it's an account key (SA...)
+	keyType, _, err := nkeys.DecodeSeed([]byte(seed))
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode seed type: %w", err)
+	}
+
+	// Account keys start with prefix 'A' in the public key (e.g., "AA...")
+	// and 'SA' in the seed (e.g., "SAADGYQZI...")
+	if keyType != nkeys.PrefixByteAccount {
+		return nil, fmt.Errorf("signing key must be an account private key (starts with SA...), got: %s", keyType.String())
+	}
+
+	return kp, nil
+}
+
 // LoadSigningKeyFromCredsFile parses a NATS credentials file and extracts the account seed
 // Credentials file format:
 //
@@ -232,30 +307,11 @@ func (c *Client) Shutdown(ctx context.Context) error {
 //	-----BEGIN USER NKEY SEED-----
 //	<seed>
 //	------END USER NKEY SEED------
+//
+// Deprecated: Use LoadSigningKeyFromFile instead, which supports both formats
+// and validates that the key is an account key.
 func LoadSigningKeyFromCredsFile(path string) (nkeys.KeyPair, error) {
-	file, err := os.Open(path) //nolint:gosec // path comes from configuration
-	if err != nil {
-		return nil, fmt.Errorf("failed to open credentials file: %w", err)
-	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			// File close errors are not critical for read operations
-			_ = err
-		}
-	}()
-
-	seed, err := extractSeedFromFile(file)
-	if err != nil {
-		return nil, err
-	}
-
-	// Parse the seed into a KeyPair
-	kp, err := nkeys.FromSeed([]byte(seed))
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse seed: %w", err)
-	}
-
-	return kp, nil
+	return LoadSigningKeyFromFile(path)
 }
 
 // extractSeedFromFile scans a credentials file and extracts the seed value.

@@ -1,0 +1,5 @@
+# This directory contains local development configuration
+# All sensitive files are gitignored - see ../.gitignore
+
+# Run ./setup.sh to generate signing.key and configure NATS
+# You must provide kubeconfig.yaml and jwks.json manually

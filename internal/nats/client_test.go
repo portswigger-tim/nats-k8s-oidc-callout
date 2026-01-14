@@ -32,7 +32,7 @@ func TestClient_Create(t *testing.T) {
 		},
 	}
 
-	client, err := NewClient("nats://localhost:4222", "", authHandler, logger)
+	client, err := NewClient("nats://localhost:4222", "", "", authHandler, logger)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -239,7 +239,7 @@ func TestClient_AuthorizerFunction(t *testing.T) {
 				authorizeFunc: tt.authHandler,
 			}
 
-			client, err := NewClient("nats://localhost:4222", "", authHandler, logger)
+			client, err := NewClient("nats://localhost:4222", "", "", authHandler, logger)
 			if err != nil {
 				t.Fatalf("Failed to create client: %v", err)
 			}
@@ -346,7 +346,7 @@ func TestClient_NewClient(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			logger := zap.NewNop()
-			client, err := NewClient(tt.url, "", authHandler, logger)
+			client, err := NewClient(tt.url, "", "", authHandler, logger)
 
 			if tt.wantErr && err == nil {
 				t.Error("Expected error but got none")
@@ -499,7 +499,7 @@ SUAAVVV6MJIGCPXSBFF7P5IPJYLNE3IYINMPIZTQZZ6M4G6HBIVZM
 	authHandler := &mockAuthHandler{}
 
 	// Should succeed with valid credentials file
-	client, err := NewClient("nats://localhost:4222", credsFile.Name(), authHandler, logger)
+	client, err := NewClient("nats://localhost:4222", credsFile.Name(), "", authHandler, logger)
 	if err != nil {
 		t.Fatalf("Failed to create client with valid credentials: %v", err)
 	}
@@ -537,7 +537,7 @@ func TestClient_WithInvalidCredentialsFile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client, err := NewClient("nats://localhost:4222", tt.credsFile, authHandler, logger)
+			client, err := NewClient("nats://localhost:4222", tt.credsFile, "", authHandler, logger)
 
 			if err == nil {
 				t.Errorf("Expected error containing %q, got nil", tt.wantErr)
@@ -566,7 +566,7 @@ func TestClient_PathTraversalProtection(t *testing.T) {
 
 	for _, path := range suspiciousPaths {
 		t.Run(path, func(t *testing.T) {
-			client, err := NewClient("nats://localhost:4222", path, authHandler, logger)
+			client, err := NewClient("nats://localhost:4222", path, "", authHandler, logger)
 
 			// These paths will fail validation either due to:
 			// 1. Path traversal detection (if cleaned path != original)
@@ -588,7 +588,7 @@ func TestClient_WithEmptyCredentialsFile(t *testing.T) {
 	authHandler := &mockAuthHandler{}
 
 	// Should succeed with empty credentials file (URL-based auth)
-	client, err := NewClient("nats://user:pass@localhost:4222", "", authHandler, logger)
+	client, err := NewClient("nats://user:pass@localhost:4222", "", "", authHandler, logger)
 	if err != nil {
 		t.Fatalf("Failed to create client with empty credentials: %v", err)
 	}

@@ -57,37 +57,28 @@ func buildAuthServiceBinary(t *testing.T) string {
 	return binaryPath
 }
 
-// createNATSCredsFileWithKey creates a NATS credentials file with the auth service account key
+// createSigningKeyFile creates a signing key file containing the account private key
 // This key is used to sign authorization responses that are validated by the NATS server
-func createNATSCredsFileWithKey(t *testing.T, publicKey string, seed []byte) string {
+func createSigningKeyFile(t *testing.T, publicKey string, seed []byte) string {
 	t.Helper()
 
-	credsFile, err := os.CreateTemp("", "nats-creds-*.creds")
+	signingKeyFile, err := os.CreateTemp("", "signing-*.key")
 	if err != nil {
-		t.Fatalf("Failed to create credentials file: %v", err)
+		t.Fatalf("Failed to create signing key file: %v", err)
 	}
 
-	// Write credentials file with the actual auth service account key
+	// Write signing key in plain format (just the seed)
 	// The auth service will use this seed to sign authorization response JWTs
 	// The NATS server validates these JWTs using the public key in auth_callout.issuer
-	credsContent := fmt.Sprintf(`-----BEGIN NATS USER JWT-----
-eyJ0eXAiOiJKV1QiLCJhbGciOiJlZDI1NTE5LW5rZXkifQ.eyJqdGkiOiJEVU1NWSIsImlhdCI6MTYwMDAwMDAwMCwiaXNzIjoiJUciLCJuYW1lIjoiYXV0aC1zZXJ2aWNlIiwic3ViIjoiJUciLCJuYXRzIjp7InB1YiI6e30sInN1YiI6e30sInN1YnMiOi0xLCJkYXRhIjotMSwicGF5bG9hZCI6LTEsInR5cGUiOiJ1c2VyIiwidmVyc2lvbiI6Mn19.ZHVtbXktc2lnbmF0dXJl
-------END NATS USER JWT------
-
------BEGIN USER NKEY SEED-----
-%s
-------END USER NKEY SEED------
-`, seed)
-
-	if _, err := credsFile.WriteString(credsContent); err != nil {
-		credsFile.Close()
-		os.Remove(credsFile.Name())
-		t.Fatalf("Failed to write credentials: %v", err)
+	if _, err := signingKeyFile.Write(seed); err != nil {
+		signingKeyFile.Close()
+		os.Remove(signingKeyFile.Name())
+		t.Fatalf("Failed to write signing key: %v", err)
 	}
 
-	credsFile.Close()
-	t.Logf("Created credentials file with auth service key (pub=%s): %s", publicKey, credsFile.Name())
-	return credsFile.Name()
+	signingKeyFile.Close()
+	t.Logf("Created signing key file (pub=%s): %s", publicKey, signingKeyFile.Name())
+	return signingKeyFile.Name()
 }
 
 // waitForAuthService waits for the auth service to be ready by checking its health endpoint
@@ -120,7 +111,7 @@ type E2ETestSuite struct {
 	natsContainer     testcontainers.Container
 	authServiceCmd    *exec.Cmd
 	authServiceBinary string
-	authServiceCreds  string
+	signingKeyFile    string
 	jwksFile          string
 	clientset         *kubernetes.Clientset
 	kubeconfigFile    string
@@ -260,14 +251,14 @@ authorization {
 	suite.natsURL = fmt.Sprintf("nats://%s:%s", natsHost, natsPort.Port())
 	t.Logf("NATS server started at: %s", suite.natsURL)
 
-	// Step 4: Create NATS credentials file with the auth service key
-	t.Log("Creating NATS credentials file with auth service key...")
+	// Step 4: Create signing key file with the auth service account key
+	t.Log("Creating signing key file with auth service account key...")
 	authServiceSeed, err := authServiceKey.Seed()
 	if err != nil {
 		suite.Cleanup(t)
 		t.Fatalf("Failed to get auth service seed: %v", err)
 	}
-	suite.authServiceCreds = createNATSCredsFileWithKey(t, authServicePub, authServiceSeed)
+	suite.signingKeyFile = createSigningKeyFile(t, authServicePub, authServiceSeed)
 
 	// Step 5: Fetch JWKS from k3s and save to file (avoids TLS cert verification issues)
 	t.Log("Fetching JWKS from k3s...")
@@ -307,12 +298,16 @@ authorization {
 	// Configure environment variables for auth service
 	cmd := exec.Command(suite.authServiceBinary)
 	cmd.Env = append(os.Environ(),
+		// NATS connection (using URL-embedded authentication)
 		fmt.Sprintf("NATS_URL=%s", natsURLWithAuth),
-		fmt.Sprintf("NATS_CREDS_FILE=%s", suite.authServiceCreds),
+		// NATS signing key (required - separate from connection auth)
+		fmt.Sprintf("NATS_SIGNING_KEY_FILE=%s", suite.signingKeyFile),
 		fmt.Sprintf("NATS_ACCOUNT=%s", authServicePub),
-		fmt.Sprintf("JWKS_PATH=%s", suite.jwksFile), // Use file-based JWKS (no TLS issues)
+		// Kubernetes JWT validation (using file-based JWKS to avoid TLS issues)
+		fmt.Sprintf("JWKS_PATH=%s", suite.jwksFile),
 		fmt.Sprintf("JWT_ISSUER=%s", jwtIssuer),
 		fmt.Sprintf("JWT_AUDIENCE=nats"),
+		// Service configuration
 		fmt.Sprintf("PORT=%d", suite.authServicePort),
 		fmt.Sprintf("LOG_LEVEL=debug"),
 		fmt.Sprintf("KUBECONFIG=%s", suite.kubeconfigFile),
@@ -353,8 +348,8 @@ func (s *E2ETestSuite) Cleanup(t *testing.T) {
 	if s.authServiceBinary != "" {
 		os.Remove(s.authServiceBinary)
 	}
-	if s.authServiceCreds != "" {
-		os.Remove(s.authServiceCreds)
+	if s.signingKeyFile != "" {
+		os.Remove(s.signingKeyFile)
 	}
 	if s.jwksFile != "" {
 		os.Remove(s.jwksFile)

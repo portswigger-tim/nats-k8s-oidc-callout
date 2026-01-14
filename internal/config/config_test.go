@@ -17,15 +17,15 @@ func TestLoad(t *testing.T) {
 		{
 			name: "in-cluster with all defaults",
 			envVars: map[string]string{
-				"NATS_CREDS_FILE": "/etc/nats/auth.creds",
-				"NATS_ACCOUNT":    "TestAccount",
+				"NATS_SIGNING_KEY_FILE": "/etc/nats/auth.creds",
+				"NATS_ACCOUNT":          "TestAccount",
 				// K8S_IN_CLUSTER defaults to true
 				// NATS_URL, JWKS_URL, JWT_ISSUER should use defaults
 			},
 			want: &Config{
 				Port:                 8080,
 				NatsURL:              "nats://nats:4222",
-				NatsCredsFile:        "/etc/nats/auth.creds",
+				NatsSigningKeyFile:   "/etc/nats/auth.creds",
 				NatsAccount:          "TestAccount",
 				JWKSUrl:              "https://kubernetes.default.svc/openid/v1/jwks",
 				JWTIssuer:            "https://kubernetes.default.svc",
@@ -42,7 +42,7 @@ func TestLoad(t *testing.T) {
 			name: "in-cluster with explicit overrides",
 			envVars: map[string]string{
 				"NATS_URL":               "nats://custom:4222",
-				"NATS_CREDS_FILE":        "/custom/creds",
+				"NATS_SIGNING_KEY_FILE":  "/custom/creds",
 				"NATS_ACCOUNT":           "CustomAccount",
 				"JWKS_URL":               "https://custom.example.com/jwks",
 				"JWT_ISSUER":             "https://custom.example.com",
@@ -57,7 +57,7 @@ func TestLoad(t *testing.T) {
 			want: &Config{
 				Port:                 9090,
 				NatsURL:              "nats://custom:4222",
-				NatsCredsFile:        "/custom/creds",
+				NatsSigningKeyFile:   "/custom/creds",
 				NatsAccount:          "CustomAccount",
 				JWKSUrl:              "https://custom.example.com/jwks",
 				JWTIssuer:            "https://custom.example.com",
@@ -73,16 +73,16 @@ func TestLoad(t *testing.T) {
 		{
 			name: "out-of-cluster requires explicit JWKS_URL and JWT_ISSUER",
 			envVars: map[string]string{
-				"NATS_CREDS_FILE": "/etc/nats/auth.creds",
-				"NATS_ACCOUNT":    "TestAccount",
-				"K8S_IN_CLUSTER":  "false",
-				"JWKS_URL":        "https://external.example.com/jwks",
-				"JWT_ISSUER":      "https://external.example.com",
+				"NATS_SIGNING_KEY_FILE": "/etc/nats/auth.creds",
+				"NATS_ACCOUNT":          "TestAccount",
+				"K8S_IN_CLUSTER":        "false",
+				"JWKS_URL":              "https://external.example.com/jwks",
+				"JWT_ISSUER":            "https://external.example.com",
 			},
 			want: &Config{
 				Port:                 8080,
 				NatsURL:              "nats://nats:4222",
-				NatsCredsFile:        "/etc/nats/auth.creds",
+				NatsSigningKeyFile:   "/etc/nats/auth.creds",
 				NatsAccount:          "TestAccount",
 				JWKSUrl:              "https://external.example.com/jwks",
 				JWTIssuer:            "https://external.example.com",
@@ -98,9 +98,9 @@ func TestLoad(t *testing.T) {
 		{
 			name: "out-of-cluster missing JWKS_URL",
 			envVars: map[string]string{
-				"NATS_CREDS_FILE": "/etc/nats/auth.creds",
-				"NATS_ACCOUNT":    "TestAccount",
-				"K8S_IN_CLUSTER":  "false",
+				"NATS_SIGNING_KEY_FILE": "/etc/nats/auth.creds",
+				"NATS_ACCOUNT":          "TestAccount",
+				"K8S_IN_CLUSTER":        "false",
 				// Missing JWKS_URL
 				"JWT_ISSUER": "https://external.example.com",
 			},
@@ -110,10 +110,10 @@ func TestLoad(t *testing.T) {
 		{
 			name: "out-of-cluster missing JWT_ISSUER",
 			envVars: map[string]string{
-				"NATS_CREDS_FILE": "/etc/nats/auth.creds",
-				"NATS_ACCOUNT":    "TestAccount",
-				"K8S_IN_CLUSTER":  "false",
-				"JWKS_URL":        "https://external.example.com/jwks",
+				"NATS_SIGNING_KEY_FILE": "/etc/nats/auth.creds",
+				"NATS_ACCOUNT":          "TestAccount",
+				"K8S_IN_CLUSTER":        "false",
+				"JWKS_URL":              "https://external.example.com/jwks",
 				// Missing JWT_ISSUER
 			},
 			wantErr: true,
@@ -126,12 +126,12 @@ func TestLoad(t *testing.T) {
 				// Missing NATS_CREDS_FILE
 			},
 			wantErr: true,
-			errMsg:  "NATS_CREDS_FILE",
+			errMsg:  "NATS_SIGNING_KEY_FILE",
 		},
 		{
 			name: "missing NATS_ACCOUNT",
 			envVars: map[string]string{
-				"NATS_CREDS_FILE": "/etc/nats/auth.creds",
+				"NATS_SIGNING_KEY_FILE": "/etc/nats/auth.creds",
 				// Missing NATS_ACCOUNT
 			},
 			wantErr: true,
@@ -143,19 +143,19 @@ func TestLoad(t *testing.T) {
 				// Missing both NATS_CREDS_FILE and NATS_ACCOUNT
 			},
 			wantErr: true,
-			errMsg:  "NATS_CREDS_FILE",
+			errMsg:  "NATS_SIGNING_KEY_FILE",
 		},
 		{
 			name: "invalid PORT value falls back to default",
 			envVars: map[string]string{
-				"NATS_CREDS_FILE": "/etc/nats/auth.creds",
-				"NATS_ACCOUNT":    "TestAccount",
-				"PORT":            "invalid",
+				"NATS_SIGNING_KEY_FILE": "/etc/nats/auth.creds",
+				"NATS_ACCOUNT":          "TestAccount",
+				"PORT":                  "invalid",
 			},
 			want: &Config{
 				Port:                 8080, // Falls back to default
 				NatsURL:              "nats://nats:4222",
-				NatsCredsFile:        "/etc/nats/auth.creds",
+				NatsSigningKeyFile:   "/etc/nats/auth.creds",
 				NatsAccount:          "TestAccount",
 				JWKSUrl:              "https://kubernetes.default.svc/openid/v1/jwks",
 				JWTIssuer:            "https://kubernetes.default.svc",
@@ -171,14 +171,14 @@ func TestLoad(t *testing.T) {
 		{
 			name: "invalid K8S_IN_CLUSTER falls back to default true",
 			envVars: map[string]string{
-				"NATS_CREDS_FILE": "/etc/nats/auth.creds",
-				"NATS_ACCOUNT":    "TestAccount",
-				"K8S_IN_CLUSTER":  "invalid",
+				"NATS_SIGNING_KEY_FILE": "/etc/nats/auth.creds",
+				"NATS_ACCOUNT":          "TestAccount",
+				"K8S_IN_CLUSTER":        "invalid",
 			},
 			want: &Config{
 				Port:                 8080,
 				NatsURL:              "nats://nats:4222",
-				NatsCredsFile:        "/etc/nats/auth.creds",
+				NatsSigningKeyFile:   "/etc/nats/auth.creds",
 				NatsAccount:          "TestAccount",
 				JWKSUrl:              "https://kubernetes.default.svc/openid/v1/jwks",
 				JWTIssuer:            "https://kubernetes.default.svc",
@@ -194,14 +194,14 @@ func TestLoad(t *testing.T) {
 		{
 			name: "invalid CACHE_CLEANUP_INTERVAL falls back to default",
 			envVars: map[string]string{
-				"NATS_CREDS_FILE":        "/etc/nats/auth.creds",
+				"NATS_SIGNING_KEY_FILE":  "/etc/nats/auth.creds",
 				"NATS_ACCOUNT":           "TestAccount",
 				"CACHE_CLEANUP_INTERVAL": "invalid",
 			},
 			want: &Config{
 				Port:                 8080,
 				NatsURL:              "nats://nats:4222",
-				NatsCredsFile:        "/etc/nats/auth.creds",
+				NatsSigningKeyFile:   "/etc/nats/auth.creds",
 				NatsAccount:          "TestAccount",
 				JWKSUrl:              "https://kubernetes.default.svc/openid/v1/jwks",
 				JWTIssuer:            "https://kubernetes.default.svc",
@@ -265,7 +265,7 @@ func clearEnv() {
 	envVars := []string{
 		"PORT",
 		"NATS_URL",
-		"NATS_CREDS_FILE",
+		"NATS_SIGNING_KEY_FILE",
 		"NATS_ACCOUNT",
 		"JWKS_URL",
 		"JWT_ISSUER",
@@ -291,8 +291,8 @@ func compareConfig(t *testing.T, got, want *Config) {
 	if got.NatsURL != want.NatsURL {
 		t.Errorf("NatsURL = %v, want %v", got.NatsURL, want.NatsURL)
 	}
-	if got.NatsCredsFile != want.NatsCredsFile {
-		t.Errorf("NatsCredsFile = %v, want %v", got.NatsCredsFile, want.NatsCredsFile)
+	if got.NatsSigningKeyFile != want.NatsSigningKeyFile {
+		t.Errorf("NatsSigningKeyFile = %v, want %v", got.NatsSigningKeyFile, want.NatsSigningKeyFile)
 	}
 	if got.NatsAccount != want.NatsAccount {
 		t.Errorf("NatsAccount = %v, want %v", got.NatsAccount, want.NatsAccount)
