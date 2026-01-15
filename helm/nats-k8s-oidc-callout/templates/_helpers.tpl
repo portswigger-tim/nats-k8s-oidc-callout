@@ -60,23 +60,45 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
-Get the name of the NATS credentials secret
+Get the name of the NATS user credentials secret
 */}}
-{{- define "nats-k8s-oidc-callout.natsSecretName" -}}
-{{- if .Values.nats.credentials.create }}
-{{- printf "%s-nats-creds" (include "nats-k8s-oidc-callout.fullname" .) }}
+{{- define "nats-k8s-oidc-callout.natsUserCredsSecretName" -}}
+{{- if .Values.nats.userCredentials.create }}
+{{- printf "%s-nats-user-creds" (include "nats-k8s-oidc-callout.fullname" .) }}
 {{- else }}
-{{- required "nats.credentials.existingSecret is required when nats.credentials.create=false" .Values.nats.credentials.existingSecret }}
+{{- .Values.nats.userCredentials.existingSecret }}
 {{- end }}
 {{- end }}
 
 {{/*
-Get the key in the NATS credentials secret
+Get the key in the NATS user credentials secret
 */}}
-{{- define "nats-k8s-oidc-callout.natsSecretKey" -}}
-{{- if .Values.nats.credentials.create }}
-{{- print "credentials" }}
+{{- define "nats-k8s-oidc-callout.natsUserCredsSecretKey" -}}
+{{- if .Values.nats.userCredentials.create }}
+{{- print "user.creds" }}
 {{- else }}
-{{- .Values.nats.credentials.existingSecretKey | default "credentials" }}
+{{- .Values.nats.userCredentials.existingSecretKey | default "user.creds" }}
+{{- end }}
+{{- end }}
+
+{{/*
+Get the name of the NATS signing key secret
+*/}}
+{{- define "nats-k8s-oidc-callout.natsSigningKeySecretName" -}}
+{{- if .Values.nats.signingKey.create }}
+{{- printf "%s-nats-signing-key" (include "nats-k8s-oidc-callout.fullname" .) }}
+{{- else }}
+{{- required "nats.signingKey.existingSecret is required when nats.signingKey.create=false" .Values.nats.signingKey.existingSecret }}
+{{- end }}
+{{- end }}
+
+{{/*
+Get the key in the NATS signing key secret
+*/}}
+{{- define "nats-k8s-oidc-callout.natsSigningKeySecretKey" -}}
+{{- if .Values.nats.signingKey.create }}
+{{- print "signing.key" }}
+{{- else }}
+{{- .Values.nats.signingKey.existingSecretKey | default "signing.key" }}
 {{- end }}
 {{- end }}

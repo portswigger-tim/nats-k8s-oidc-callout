@@ -6,7 +6,7 @@ tests:
     set:
       nats:
         account: "test-account"
-        credentials:
+        signingKey:
           existingSecret: "test-secret"
     asserts:
       - isKind:
@@ -23,7 +23,7 @@ tests:
       replicaCount: 3
       nats:
         account: "test-account"
-        credentials:
+        signingKey:
           existingSecret: "test-secret"
     asserts:
       - equal:
@@ -36,12 +36,12 @@ tests:
         repository: ghcr.io/test/repo
       nats:
         account: "test-account"
-        credentials:
+        signingKey:
           existingSecret: "test-secret"
     asserts:
       - equal:
           path: spec.template.spec.containers[0].image
-          value: ghcr.io/test/repo:latest
+          value: ghcr.io/test/repo:v2.0.0
 
   - it: should use correct image with custom tag
     set:
@@ -50,7 +50,7 @@ tests:
         tag: v1.2.3
       nats:
         account: "test-account"
-        credentials:
+        signingKey:
           existingSecret: "test-secret"
     asserts:
       - equal:
@@ -61,7 +61,7 @@ tests:
     set:
       nats:
         account: "test-account"
-        credentials:
+        signingKey:
           existingSecret: "test-secret"
     asserts:
       # Pod security context
@@ -89,7 +89,7 @@ tests:
     set:
       nats:
         account: "test-account"
-        credentials:
+        signingKey:
           existingSecret: "test-secret"
     asserts:
       # Liveness probe
@@ -118,7 +118,7 @@ tests:
       nats:
         account: "test-account"
         url: "nats://custom:4222"
-        credentials:
+        signingKey:
           existingSecret: "test-secret"
     asserts:
       - contains:
@@ -134,8 +134,8 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].env
           content:
-            name: NATS_CREDS_FILE
-            value: "/etc/nats/credentials"
+            name: NATS_SIGNING_KEY_FILE
+            value: "/etc/nats/signing.key"
       - contains:
           path: spec.template.spec.containers[0].env
           content:
@@ -146,7 +146,7 @@ tests:
     set:
       nats:
         account: "test-account"
-        credentials:
+        signingKey:
           existingSecret: "test-secret"
     asserts:
       - contains:
@@ -159,7 +159,7 @@ tests:
     set:
       nats:
         account: "test-account"
-        credentials:
+        signingKey:
           existingSecret: "test-secret"
       jwt:
         issuer: "https://custom-issuer"
@@ -186,7 +186,7 @@ tests:
     set:
       nats:
         account: "test-account"
-        credentials:
+        signingKey:
           existingSecret: "test-secret"
     asserts:
       - notContains:
@@ -207,7 +207,7 @@ tests:
       logLevel: debug
       nats:
         account: "test-account"
-        credentials:
+        signingKey:
           existingSecret: "test-secret"
     asserts:
       - contains:
@@ -216,53 +216,101 @@ tests:
             name: LOG_LEVEL
             value: "debug"
 
-  - it: should mount NATS credentials volume correctly
+  - it: should set NATS_USER_CREDS_FILE when userCredentials provided
     set:
       nats:
         account: "test-account"
-        credentials:
+        userCredentials:
+          existingSecret: "user-creds-secret"
+        signingKey:
+          existingSecret: "signing-key-secret"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: NATS_USER_CREDS_FILE
+            value: "/etc/nats/user.creds"
+
+  - it: should set NATS_TOKEN when token provided
+    set:
+      nats:
+        account: "test-account"
+        token: "test-token"
+        signingKey:
+          existingSecret: "signing-key-secret"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: NATS_TOKEN
+            value: "test-token"
+
+  - it: should mount signing key volume correctly
+    set:
+      nats:
+        account: "test-account"
+        signingKey:
           existingSecret: "test-secret"
-          existingSecretKey: "creds"
+          existingSecretKey: "signing-key"
     asserts:
       - contains:
           path: spec.template.spec.containers[0].volumeMounts
           content:
-            name: nats-credentials
-            mountPath: /etc/nats
+            name: nats-signing-key
+            mountPath: /etc/nats/signing.key
+            subPath: signing-key
             readOnly: true
       - contains:
           path: spec.template.spec.volumes
           content:
-            name: nats-credentials
+            name: nats-signing-key
             secret:
               secretName: test-secret
-              items:
-                - key: creds
-                  path: credentials
 
-  - it: should mount created secret when credentials.create=true
+  - it: should mount user credentials volume when provided
     set:
       nats:
         account: "test-account"
-        credentials:
+        userCredentials:
+          existingSecret: "user-creds-secret"
+          existingSecretKey: "user.creds"
+        signingKey:
+          existingSecret: "signing-key-secret"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: nats-user-credentials
+            mountPath: /etc/nats/user.creds
+            subPath: user.creds
+            readOnly: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: nats-user-credentials
+            secret:
+              secretName: user-creds-secret
+
+  - it: should mount created secret when signingKey.create=true
+    set:
+      nats:
+        account: "test-account"
+        signingKey:
           create: true
-          content: "test-credentials-content"
+          content: "test-signing-key-content"
     asserts:
       - contains:
           path: spec.template.spec.volumes
           content:
-            name: nats-credentials
+            name: nats-signing-key
             secret:
-              secretName: RELEASE-NAME-nats-k8s-oidc-callout-nats-creds
-              items:
-                - key: credentials
-                  path: credentials
+              secretName: RELEASE-NAME-nats-k8s-oidc-callout-nats-signing-key
 
   - it: should set resource limits and requests
     set:
       nats:
         account: "test-account"
-        credentials:
+        signingKey:
           existingSecret: "test-secret"
       resources:
         limits:
@@ -289,7 +337,7 @@ tests:
     set:
       nats:
         account: "test-account"
-        credentials:
+        signingKey:
           existingSecret: "test-secret"
       podAnnotations:
         prometheus.io/scrape: "true"
@@ -306,7 +354,7 @@ tests:
     set:
       nats:
         account: "test-account"
-        credentials:
+        signingKey:
           existingSecret: "test-secret"
       nodeSelector:
         disktype: ssd
@@ -319,7 +367,7 @@ tests:
     set:
       nats:
         account: "test-account"
-        credentials:
+        signingKey:
           existingSecret: "test-secret"
       tolerations:
         - key: "key1"
@@ -338,7 +386,7 @@ tests:
     set:
       nats:
         account: "test-account"
-        credentials:
+        signingKey:
           existingSecret: "test-secret"
       affinity:
         nodeAffinity:
@@ -359,17 +407,25 @@ tests:
   - it: should fail when nats.account is not set
     set:
       nats:
-        credentials:
+        signingKey:
           existingSecret: "test-secret"
     asserts:
       - failedTemplate:
           errorMessage: "nats.account is required"
 
+  - it: should fail when signingKey not provided
+    set:
+      nats:
+        account: "test-account"
+    asserts:
+      - failedTemplate:
+          errorMessage: "nats.signingKey.existingSecret is required when nats.signingKey.create=false"
+
   - it: should use correct service account name when created
     set:
       nats:
         account: "test-account"
-        credentials:
+        signingKey:
           existingSecret: "test-secret"
       serviceAccount:
         create: true
@@ -382,7 +438,7 @@ tests:
     set:
       nats:
         account: "test-account"
-        credentials:
+        signingKey:
           existingSecret: "test-secret"
       serviceAccount:
         create: true
@@ -396,7 +452,7 @@ tests:
     set:
       nats:
         account: "test-account"
-        credentials:
+        signingKey:
           existingSecret: "test-secret"
       serviceAccount:
         create: false
