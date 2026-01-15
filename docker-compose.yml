@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  # NATS server with auth callout configuration
+  nats:
+    image: nats:latest
+    container_name: nats-server
+    ports:
+      - "4222:4222"  # Client connections
+      - "8222:8222"  # Monitoring
+    volumes:
+      - ./local-dev/nats-server.conf:/etc/nats/nats-server.conf:ro
+    command: ["-c", "/etc/nats/nats-server.conf"]
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Auth callout service
+  auth-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: auth-callout
+    depends_on:
+      nats:
+        condition: service_healthy
+    ports:
+      - "8080:8080"  # Health/metrics endpoint
+    volumes:
+      - ./local-dev/signing.key:/etc/nats/signing.key:ro
+      - ./local-dev/kubeconfig.yaml:/etc/kubernetes/kubeconfig:ro
+      - ./local-dev/jwks.json:/etc/kubernetes/jwks.json:ro
+    environment:
+      # NATS Connection (using URL-embedded auth - simplest for local dev)
+      NATS_URL: "nats://auth-service:auth-password@nats:4222"
+      NATS_SIGNING_KEY_FILE: "/etc/nats/signing.key"
+      NATS_ACCOUNT: "AUTH_ACCOUNT"
+
+      # Kubernetes JWT Validation (using local files for dev)
+      JWKS_PATH: "/etc/kubernetes/jwks.json"
+      JWT_ISSUER: "https://kubernetes.default.svc.cluster.local"
+      JWT_AUDIENCE: "nats"
+
+      # Kubernetes Client (out-of-cluster mode)
+      K8S_IN_CLUSTER: "false"
+      KUBECONFIG: "/etc/kubernetes/kubeconfig"
+
+      # Logging
+      LOG_LEVEL: "debug"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+networks:
+  default:
+    name: nats-dev

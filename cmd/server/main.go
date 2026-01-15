@@ -102,22 +102,32 @@ func startK8sInformers(factory informers.SharedInformerFactory, stopCh chan stru
 
 // initNATSClient initializes the NATS client with signing key configuration.
 func initNATSClient(cfg *config.Config, authHandler *auth.Handler, logger *zap.Logger) (*nats.Client, error) {
-	// Create NATS client with credentials file path
-	logger.Info("initializing NATS client",
-		zap.String("url", cfg.NatsURL),
-		zap.String("creds_file", cfg.NatsCredsFile))
-	natsClient, err := nats.NewClient(cfg.NatsURL, cfg.NatsCredsFile, authHandler, logger)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create NATS client (url=%s, creds=%s): %w",
-			cfg.NatsURL, cfg.NatsCredsFile, err)
+	// Determine auth mode for logging
+	authMode := "URL-embedded"
+	if cfg.NatsUserCredsFile != "" {
+		authMode = "user-credentials"
+	} else if cfg.NatsToken != "" {
+		authMode = "token"
 	}
 
-	// Load signing key from credentials file
-	logger.Info("loading signing key from credentials", zap.String("creds_file", cfg.NatsCredsFile))
-	signingKey, err := nats.LoadSigningKeyFromCredsFile(cfg.NatsCredsFile)
+	logger.Info("initializing NATS client",
+		zap.String("url", cfg.NatsURL),
+		zap.String("auth_mode", authMode),
+		zap.String("user_creds_file", cfg.NatsUserCredsFile),
+		zap.String("signing_key_file", cfg.NatsSigningKeyFile))
+
+	// Create NATS client with authentication configuration
+	natsClient, err := nats.NewClient(cfg.NatsURL, cfg.NatsUserCredsFile, cfg.NatsToken, authHandler, logger)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load signing key from credentials file %s: %w",
-			cfg.NatsCredsFile, err)
+		return nil, fmt.Errorf("failed to create NATS client: %w", err)
+	}
+
+	// Load signing key from separate file
+	logger.Info("loading account signing key", zap.String("signing_key_file", cfg.NatsSigningKeyFile))
+	signingKey, err := nats.LoadSigningKeyFromFile(cfg.NatsSigningKeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load signing key from file %s: %w",
+			cfg.NatsSigningKeyFile, err)
 	}
 	natsClient.SetSigningKey(signingKey)
 
