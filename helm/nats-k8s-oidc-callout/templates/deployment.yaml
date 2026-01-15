@@ -56,8 +56,16 @@ spec:
           value: {{ .Values.nats.url | default "nats://nats:4222" | quote }}
         - name: NATS_ACCOUNT
           value: {{ required "nats.account is required" .Values.nats.account | quote }}
-        - name: NATS_CREDS_FILE
-          value: "/etc/nats/credentials"
+        {{- if or .Values.nats.userCredentials.create .Values.nats.userCredentials.existingSecret }}
+        - name: NATS_USER_CREDS_FILE
+          value: "/etc/nats/user.creds"
+        {{- end }}
+        {{- if .Values.nats.token }}
+        - name: NATS_TOKEN
+          value: {{ .Values.nats.token | quote }}
+        {{- end }}
+        - name: NATS_SIGNING_KEY_FILE
+          value: "/etc/nats/signing.key"
         - name: K8S_IN_CLUSTER
           value: "true"
         {{- if .Values.jwt.issuer }}
@@ -75,16 +83,25 @@ spec:
         resources:
           {{- toYaml .Values.resources | nindent 12 }}
         volumeMounts:
-        - name: nats-credentials
-          mountPath: /etc/nats
+        {{- if or .Values.nats.userCredentials.create .Values.nats.userCredentials.existingSecret }}
+        - name: nats-user-credentials
+          mountPath: /etc/nats/user.creds
+          subPath: {{ include "nats-k8s-oidc-callout.natsUserCredsSecretKey" . }}
+          readOnly: true
+        {{- end }}
+        - name: nats-signing-key
+          mountPath: /etc/nats/signing.key
+          subPath: {{ include "nats-k8s-oidc-callout.natsSigningKeySecretKey" . }}
           readOnly: true
       volumes:
-      - name: nats-credentials
+      {{- if or .Values.nats.userCredentials.create .Values.nats.userCredentials.existingSecret }}
+      - name: nats-user-credentials
         secret:
-          secretName: {{ include "nats-k8s-oidc-callout.natsSecretName" . }}
-          items:
-          - key: {{ include "nats-k8s-oidc-callout.natsSecretKey" . }}
-            path: credentials
+          secretName: {{ include "nats-k8s-oidc-callout.natsUserCredsSecretName" . }}
+      {{- end }}
+      - name: nats-signing-key
+        secret:
+          secretName: {{ include "nats-k8s-oidc-callout.natsSigningKeySecretName" . }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

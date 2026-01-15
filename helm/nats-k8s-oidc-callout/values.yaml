@@ -12,23 +12,39 @@ image:
   tag: ""
 
 nats:
-  # -- NATS server URL
+  # -- NATS server URL (can include embedded auth: nats://user:pass@host:port)
   # @default -- `nats://nats:4222`
   url: ""
 
   # -- NATS account name for the auth callout service (REQUIRED)
   account: ""
 
-  credentials:
-    # -- Create a new secret for NATS credentials
+  # Connection Authentication (optional - pick one method or use URL-embedded auth)
+  userCredentials:
+    # -- Create a new secret for NATS user credentials
     create: false
-    # -- Content of the credentials file (required if create=true). Use `--set-file nats.credentials.content=path/to/file`
+    # -- Content of the user credentials file (required if create=true). Use `--set-file nats.userCredentials.content=path/to/user.creds`
     content: ""
 
-    # -- Name of existing secret containing NATS credentials (required if create=false)
+    # -- Name of existing secret containing NATS user credentials (required if create=false and using credentials file)
     existingSecret: ""
-    # -- Key in the existing secret that contains the credentials file
-    existingSecretKey: "credentials"
+    # -- Key in the existing secret that contains the user credentials file
+    existingSecretKey: "user.creds"
+
+  # -- NATS token for authentication (alternative to userCredentials)
+  token: ""
+
+  # Authorization Signing (REQUIRED)
+  signingKey:
+    # -- Create a new secret for NATS account signing key
+    create: false
+    # -- Content of the signing key file (required if create=true). Use `--set-file nats.signingKey.content=path/to/signing.key`
+    content: ""
+
+    # -- Name of existing secret containing NATS account signing key (REQUIRED if create=false)
+    existingSecret: ""
+    # -- Key in the existing secret that contains the signing key
+    existingSecretKey: "signing.key"
 
 jwt:
   # -- JWT issuer for token validation
