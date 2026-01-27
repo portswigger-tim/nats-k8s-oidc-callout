@@ -56,7 +56,7 @@ type Client struct {
 //
 // The signing key must be loaded separately using SetSigningKey() before calling Start().
 // The signing key is used to sign authorization response JWTs and must be an account private key.
-func NewClient(url, userCredsFile, token string, authHandler AuthHandler, logger *zap.Logger) (*Client, error) {
+func NewClient(natsURL, userCredsFile, token string, authHandler AuthHandler, logger *zap.Logger) (*Client, error) {
 	// Validate user credentials file if provided
 	if userCredsFile != "" {
 		// Clean and validate the path to prevent path traversal attacks
@@ -83,7 +83,7 @@ func NewClient(url, userCredsFile, token string, authHandler AuthHandler, logger
 	}
 
 	return &Client{
-		url:         url,
+		url:         natsURL,
 		credsFile:   userCredsFile, // User credentials file (optional)
 		token:       token,
 		authHandler: authHandler,
@@ -103,47 +103,20 @@ func (c *Client) Start(ctx context.Context) error {
 		return fmt.Errorf("signing key not set; call SetSigningKey() before Start()")
 	}
 
-	// Build connection options
-	opts := []natsclient.Option{
-		natsclient.Timeout(5 * time.Second),
+	// Build connection options with preallocated capacity
+	opts := make([]natsclient.Option, 0, 4)
+	opts = append(opts,
+		natsclient.Timeout(5*time.Second),
 		natsclient.Name("nats-k8s-oidc-callout"),
-	}
+	)
 
 	// Add authentication based on configured method
 	// Priority: User credentials > Token > URL-embedded credentials
-	if c.credsFile != "" {
-		c.logger.Info("using user credentials file for NATS authentication",
-			zap.String("user_creds_file", c.credsFile))
-		opts = append(opts, natsclient.UserCredentials(c.credsFile))
-	} else if c.token != "" {
-		c.logger.Info("using token for NATS authentication")
-		opts = append(opts, natsclient.Token(c.token))
-	} else {
-		c.logger.Info("using URL-embedded credentials for NATS authentication (username/password in URL)")
-
-		// Parse URL to extract credentials and create clean URL
-		parsedURL, err := url.Parse(c.url)
-		if err != nil {
-			return fmt.Errorf("failed to parse NATS URL: %w", err)
-		}
-
-		// Extract username and password from URL
-		if parsedURL.User != nil {
-			username := parsedURL.User.Username()
-			password, hasPassword := parsedURL.User.Password()
-
-			if hasPassword {
-				// Use UserInfo option with extracted credentials
-				opts = append(opts, natsclient.UserInfo(username, password))
-
-				// Create clean URL without credentials for connection
-				parsedURL.User = nil
-				c.url = parsedURL.String()
-
-				c.logger.Info("extracted credentials from URL, connecting with clean URL")
-			}
-		}
+	authOpts, err := c.configureAuthentication()
+	if err != nil {
+		return fmt.Errorf("failed to configure authentication: %w", err)
 	}
+	opts = append(opts, authOpts...)
 
 	// Connect to NATS
 	conn, err := natsclient.Connect(c.url, opts...)
@@ -243,6 +216,53 @@ func (c *Client) Start(ctx context.Context) error {
 
 	c.service = service
 	return nil
+}
+
+// configureAuthentication configures NATS connection authentication options based on the configured method.
+// Priority: User credentials > Token > URL-embedded credentials
+func (c *Client) configureAuthentication() ([]natsclient.Option, error) {
+	var opts []natsclient.Option
+
+	if c.credsFile != "" {
+		c.logger.Info("using user credentials file for NATS authentication",
+			zap.String("user_creds_file", c.credsFile))
+		opts = append(opts, natsclient.UserCredentials(c.credsFile))
+		return opts, nil
+	}
+
+	if c.token != "" {
+		c.logger.Info("using token for NATS authentication")
+		opts = append(opts, natsclient.Token(c.token))
+		return opts, nil
+	}
+
+	// URL-embedded credentials
+	c.logger.Info("using URL-embedded credentials for NATS authentication (username/password in URL)")
+
+	// Parse URL to extract credentials and create clean URL
+	parsedURL, err := url.Parse(c.url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse NATS URL: %w", err)
+	}
+
+	// Extract username and password from URL
+	if parsedURL.User != nil {
+		username := parsedURL.User.Username()
+		password, hasPassword := parsedURL.User.Password()
+
+		if hasPassword {
+			// Use UserInfo option with extracted credentials
+			opts = append(opts, natsclient.UserInfo(username, password))
+
+			// Create clean URL without credentials for connection
+			parsedURL.User = nil
+			c.url = parsedURL.String()
+
+			c.logger.Info("extracted credentials from URL, connecting with clean URL")
+		}
+	}
+
+	return opts, nil
 }
 
 // Shutdown gracefully shuts down the client

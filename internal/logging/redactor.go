@@ -1,3 +1,5 @@
+// Package logging provides utility functions for secure logging,
+// including redaction of sensitive information such as passwords and tokens.
 package logging
 
 import (
