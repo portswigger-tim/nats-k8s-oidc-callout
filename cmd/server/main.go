@@ -19,6 +19,7 @@ import (
 	"github.com/portswigger-tim/nats-k8s-oidc-callout/internal/httpserver"
 	"github.com/portswigger-tim/nats-k8s-oidc-callout/internal/jwt"
 	"github.com/portswigger-tim/nats-k8s-oidc-callout/internal/k8s"
+	"github.com/portswigger-tim/nats-k8s-oidc-callout/internal/logging"
 	"github.com/portswigger-tim/nats-k8s-oidc-callout/internal/nats"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -111,7 +112,7 @@ func initNATSClient(cfg *config.Config, authHandler *auth.Handler, logger *zap.L
 	}
 
 	logger.Info("initializing NATS client",
-		zap.String("url", cfg.NatsURL),
+		zap.String("url", logging.RedactNATSURL(cfg.NatsURL)),
 		zap.String("auth_mode", authMode),
 		zap.String("user_creds_file", cfg.NatsUserCredsFile),
 		zap.String("signing_key_file", cfg.NatsSigningKeyFile))
@@ -199,7 +200,7 @@ func run() error {
 	logger.Info("starting nats-k8s-oidc-callout",
 		zap.String("port", fmt.Sprintf("%d", cfg.Port)),
 		zap.String("log_level", cfg.LogLevel),
-		zap.String("nats_url", cfg.NatsURL),
+		zap.String("nats_url", logging.RedactNATSURL(cfg.NatsURL)),
 		zap.String("jwks_url", cfg.JWKSUrl),
 	)
 
