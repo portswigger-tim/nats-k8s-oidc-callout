@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -119,6 +120,29 @@ func (c *Client) Start(ctx context.Context) error {
 		opts = append(opts, natsclient.Token(c.token))
 	} else {
 		c.logger.Info("using URL-embedded credentials for NATS authentication (username/password in URL)")
+
+		// Parse URL to extract credentials and create clean URL
+		parsedURL, err := url.Parse(c.url)
+		if err != nil {
+			return fmt.Errorf("failed to parse NATS URL: %w", err)
+		}
+
+		// Extract username and password from URL
+		if parsedURL.User != nil {
+			username := parsedURL.User.Username()
+			password, hasPassword := parsedURL.User.Password()
+
+			if hasPassword {
+				// Use UserInfo option with extracted credentials
+				opts = append(opts, natsclient.UserInfo(username, password))
+
+				// Create clean URL without credentials for connection
+				parsedURL.User = nil
+				c.url = parsedURL.String()
+
+				c.logger.Info("extracted credentials from URL, connecting with clean URL")
+			}
+		}
 	}
 
 	// Connect to NATS
