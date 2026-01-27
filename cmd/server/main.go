@@ -200,7 +200,7 @@ func run() error {
 	logger.Info("starting nats-k8s-oidc-callout",
 		zap.String("port", fmt.Sprintf("%d", cfg.Port)),
 		zap.String("log_level", cfg.LogLevel),
-		zap.String("nats_url", cfg.NatsURL),
+		zap.String("nats_url", logging.RedactNATSURL(cfg.NatsURL)),
 		zap.String("jwks_url", cfg.JWKSUrl),
 	)
 
