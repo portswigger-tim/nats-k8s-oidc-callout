@@ -2,7 +2,7 @@ apiVersion: v2
 name: nats-k8s-oidc-callout
 description: NATS authorization callout service for Kubernetes service account JWT validation
 type: application
-version: 1.0.0
+version: 1.0.1
 appVersion: "v2.0.0"
 home: https://github.com/portswigger-tim/nats-k8s-oidc-callout
 keywords:

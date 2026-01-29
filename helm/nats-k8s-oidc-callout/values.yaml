@@ -60,6 +60,15 @@ jwt:
 # -- Log level (debug, info, warn, error)
 logLevel: info
 
+# -- Secret values mounted as environment variables (from SOPS secrets.yaml)
+# Format: KEY: value (will be base64 encoded automatically)
+secretEnv: {}
+  # NATS_URL: nats://auth-service:password@nats:4222
+
+# -- Secret values mounted as files in /secrets directory
+# Format: filename: <base64-encoded-content>
+secretVolume: {}
+
 # -- Resource limits and requests
 resources:
   limits:

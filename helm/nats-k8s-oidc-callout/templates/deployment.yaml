@@ -53,7 +53,14 @@ spec:
         - name: LOG_LEVEL
           value: {{ .Values.logLevel | quote }}
         - name: NATS_URL
+          {{- if .Values.secretEnv.NATS_URL }}
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "nats-k8s-oidc-callout.fullname" . }}-env
+              key: NATS_URL
+          {{- else }}
           value: {{ .Values.nats.url | default "nats://nats:4222" | quote }}
+          {{- end }}
         - name: NATS_ACCOUNT
           value: {{ required "nats.account is required" .Values.nats.account | quote }}
         {{- if or .Values.nats.userCredentials.create .Values.nats.userCredentials.existingSecret }}
