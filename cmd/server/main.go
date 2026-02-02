@@ -114,11 +114,12 @@ func initNATSClient(cfg *config.Config, authHandler *auth.Handler, logger *zap.L
 	logger.Info("initializing NATS client",
 		zap.String("url", logging.RedactNATSURL(cfg.NatsURL)),
 		zap.String("auth_mode", authMode),
+		zap.String("account", cfg.NatsAccount),
 		zap.String("user_creds_file", cfg.NatsUserCredsFile),
 		zap.String("signing_key_file", cfg.NatsSigningKeyFile))
 
 	// Create NATS client with authentication configuration
-	natsClient, err := nats.NewClient(cfg.NatsURL, cfg.NatsUserCredsFile, cfg.NatsToken, authHandler, logger)
+	natsClient, err := nats.NewClient(cfg.NatsURL, cfg.NatsUserCredsFile, cfg.NatsToken, cfg.NatsAccount, authHandler, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create NATS client: %w", err)
 	}

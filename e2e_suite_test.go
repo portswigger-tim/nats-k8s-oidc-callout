@@ -302,7 +302,7 @@ authorization {
 		fmt.Sprintf("NATS_URL=%s", natsURLWithAuth),
 		// NATS signing key (required - separate from connection auth)
 		fmt.Sprintf("NATS_SIGNING_KEY_FILE=%s", suite.signingKeyFile),
-		fmt.Sprintf("NATS_ACCOUNT=%s", authServicePub),
+		"NATS_ACCOUNT=$G",
 		// Kubernetes JWT validation (using file-based JWKS to avoid TLS issues)
 		fmt.Sprintf("JWKS_PATH=%s", suite.jwksFile),
 		fmt.Sprintf("JWT_ISSUER=%s", jwtIssuer),

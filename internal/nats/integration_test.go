@@ -88,7 +88,7 @@ authorization {
 	logger := zap.NewNop()
 
 	// Create and start our auth callout client without credentials file (using URL-based auth)
-	client, err := NewClient(natsURL, "", "", authHandler, logger)
+	client, err := NewClient(natsURL, "", "", "$G", authHandler, logger)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}

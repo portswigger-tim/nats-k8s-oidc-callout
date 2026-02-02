@@ -36,6 +36,7 @@ type Client struct {
 	url         string
 	credsFile   string // User credentials file (optional)
 	token       string // Token for authentication (optional)
+	account     string // NATS account to assign authenticated clients to
 	authHandler AuthHandler
 	conn        *natsclient.Conn
 	service     *callout.AuthorizationService
@@ -54,9 +55,12 @@ type Client struct {
 //  3. Token authentication: Static token for connection
 //     Pass empty userCredsFile, non-empty token.
 //
+// The account parameter specifies which NATS account authenticated clients will be assigned to.
+// Use "$G" for the global account, or specify a specific account name like "APP" for multi-tenancy.
+//
 // The signing key must be loaded separately using SetSigningKey() before calling Start().
 // The signing key is used to sign authorization response JWTs and must be an account private key.
-func NewClient(natsURL, userCredsFile, token string, authHandler AuthHandler, logger *zap.Logger) (*Client, error) {
+func NewClient(natsURL, userCredsFile, token, account string, authHandler AuthHandler, logger *zap.Logger) (*Client, error) {
 	// Validate user credentials file if provided
 	if userCredsFile != "" {
 		// Clean and validate the path to prevent path traversal attacks
@@ -82,10 +86,16 @@ func NewClient(natsURL, userCredsFile, token string, authHandler AuthHandler, lo
 		return nil, fmt.Errorf("userCredsFile and token are mutually exclusive; provide at most one")
 	}
 
+	// Validate account parameter
+	if account == "" {
+		return nil, fmt.Errorf("account parameter is required (e.g., APP or $G)")
+	}
+
 	return &Client{
 		url:         natsURL,
 		credsFile:   userCredsFile, // User credentials file (optional)
 		token:       token,
+		account:     account, // NATS account for authenticated clients
 		authHandler: authHandler,
 		logger:      logger,
 	}, nil
@@ -163,9 +173,9 @@ func (c *Client) Start(ctx context.Context) error {
 		// Build NATS user claims
 		uc := jwt.NewUserClaims(req.UserNkey)
 
-		// Set the audience to the global account
-		// $G is the NATS global account - simplest approach for single-tenant setups
-		uc.Audience = "$G"
+		// Set the audience to the configured NATS account
+		// This enables multi-tenancy by assigning clients to specific accounts
+		uc.Audience = c.account
 
 		uc.Pub.Allow.Add(authResp.PublishPermissions...)
 		uc.Sub.Allow.Add(authResp.SubscribePermissions...)
