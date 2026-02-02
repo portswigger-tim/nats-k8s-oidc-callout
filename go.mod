@@ -1,6 +1,6 @@
 module github.com/portswigger-tim/nats-k8s-oidc-callout
 
-go 1.25.5
+go 1.25.6
 
 require (
 	github.com/MicahParks/keyfunc/v2 v2.1.0
